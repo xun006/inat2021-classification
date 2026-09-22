@@ -1,0 +1,14 @@
+{
+  "selection_split": "detector_calibration",
+  "selection_metric": "Error AUPRC",
+  "selected_run": "s4_direct",
+  "selected_checkpoint": "/mnt/hdd8t/Mingle/xyyy/MisD/output/formal_topk_fd/screen/s4_direct/checkpoint_best.pth",
+  "selected_epoch": 3,
+  "calibration_metrics": {
+    "auroc": 0.9231619010345727,
+    "error_auprc": 0.5757048548771837,
+    "fpr_at_95_tpr": 0.2894750372769808,
+    "aurc": 0.012414737742420932
+  },
+  "selection_note": "Selected before official_val evaluation. S4 has the highest calibration Error AUPRC among the screened models."
+}

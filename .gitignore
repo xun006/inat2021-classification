@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments and secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# IDE and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Logs and experiment tracking
+*.log
+swanlog/*
+wandb/
+runs/
+checkpoints/
+
+# Raw datasets and downloaded archives
+data/inat2021/raw/
+data/inat2021/plants/train/
+data/inat2021/plants/train_plants.json
+data/inat2021/plants/val_plants.json
+data/inat2021/plants/val/
+data/inat2021/meta
+
+# Large dataset metadata and generated indexes
+data/inat2021/plants/*_paths.txt
+data/inat2021/*.json.tar.gz
+
+# Generated MisD datasets
+MisD/data/classifier_train/
+MisD/data/classifier_val/
+MisD/data/detector_train/
+MisD/data/detector_calibration/
+MisD/data/official_val/
+MisD/data/split_manifest.csv
+
+# Large generated manifests
+MisD/data/split_manifest.csv
+
+# Model weights
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+models
+
+# Experiment outputs
+MisD/output/
+MisD/TopK-ProtoFD/outputs/
+MisD/TopK-ProtoFD/prototypes/
+MisD/confidnet_tcp/__pycache__/
+
+# Generated analysis artifacts
+MisD/analyse_data/results/

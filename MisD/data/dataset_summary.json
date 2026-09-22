@@ -1,0 +1,25 @@
+{
+  "source": "/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants",
+  "output": "/mnt/hdd8t/Mingle/xyyy/MisD/data",
+  "seed": 42,
+  "randomization": "independent deterministic shuffle per class using SHA-256-derived seed",
+  "link_mode": "hardlink",
+  "classes": 4271,
+  "source_train_images": 1148702,
+  "source_official_val_images": 42710,
+  "allocation_per_class_from_source_train": {
+    "classifier_val": 10,
+    "detector_train": 30,
+    "detector_calibration": 5,
+    "classifier_train": "all remaining images"
+  },
+  "split_counts": {
+    "classifier_val": 42710,
+    "detector_train": 128130,
+    "detector_calibration": 21355,
+    "classifier_train": 956507,
+    "official_val": 42710
+  },
+  "overlap_policy": "the four source-train-derived splits are mutually exclusive",
+  "official_val_policy": "complete original val; reserved as final misclassification test"
+}
