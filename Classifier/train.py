@@ -136,6 +136,8 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
     use_amp = not args.no_amp and device.type == "cuda"
 
     for step, (images, targets) in enumerate(loader):
+        lr = cosine_lr(optimizer, epoch + step / len(loader), args.epochs,
+                       args.warmup_epochs, args.lr, args.min_lr)
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
@@ -168,14 +170,14 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             elapsed = time.time() - started
             print(
                 f"epoch {epoch+1:03d} train [{step+1:05d}/{len(loader):05d}] "
-                f"loss={loss.item():.5f} lr={optimizer.param_groups[0]['lr']:.6g} "
+                f"loss={loss.item():.5f} lr={lr:.6g} "
                 f"elapsed={elapsed/60:.1f}m",
                 flush=True,
             )
 
     avg_loss = loss_sum / sample_count
     avg_comps = {k: v / sample_count for k, v in component_sums.items()}
-    return avg_loss, avg_comps
+    return avg_loss, avg_comps, lr
 
 
 @torch.inference_mode()
@@ -313,9 +315,7 @@ def main():
     # training loop
     csv_path = args.output_dir / "metrics.csv"
     for epoch in range(start_epoch, args.epochs):
-        lr = cosine_lr(optimizer, epoch, args.epochs, args.warmup_epochs,
-                       args.lr, args.min_lr)
-        train_loss, train_comps = train_one_epoch(
+        train_loss, train_comps, lr = train_one_epoch(
             model, train_loader, optimizer, scaler, criterion,
             device, epoch, args, args.lr
         )
