@@ -27,9 +27,9 @@ CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON}" "${PROJECT_ROOT}/Classifier/train.py" 
   --lora-targets qkv proj \
   --margin 0.5 \
   --temperature 0.07 \
-  --pk-P 32 --pk-K 4 \
+  --pk-P 8 --pk-K 4 \
   --epochs 50 --warmup-epochs 5 \
-  --lr 1e-4 --weight-decay 1e-3 \
+  --accum-iter 4 --lr 1e-4 --weight-decay 1e-3 \
   --num-workers 12 --seed 0
 
 echo "Exp-L2L3 training complete. Exporting outputs..."

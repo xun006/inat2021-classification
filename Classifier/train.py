@@ -82,6 +82,8 @@ def parse_args():
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--warmup-epochs", type=int, default=5)
     p.add_argument("--batch-size", type=int, default=128, help="for L1 (non-PK)")
+    p.add_argument("--accum-iter", type=int, default=1,
+                   help="Gradient accumulation steps (effective_batch = batch_size * accum_iter)")
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--min-lr", type=float, default=1e-6)
     p.add_argument("--weight-decay", type=float, default=1e-3)
@@ -145,14 +147,16 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             else:
                 loss, comps = criterion(logits, features, targets)
 
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad], args.grad_clip
-        )
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
+        scaler.scale(loss / args.accum_iter).backward()
+        should_step = (step + 1) % args.accum_iter == 0 or step + 1 == len(loader)
+        if should_step:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in model.parameters() if p.requires_grad], args.grad_clip
+            )
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
 
         batch = images.size(0)
         loss_sum += loss.item() * batch
