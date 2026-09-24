@@ -27,7 +27,7 @@ CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON}" "${PROJECT_ROOT}/Classifier/train.py" 
   --lora-targets qkv proj \
   --temperature 0.07 \
   --pk-P 8 --pk-K 4 \
-  --epochs 50 --warmup-epochs 5 \
+  --epochs 20 --warmup-epochs 5 \
   --accum-iter 4 --lr 1e-4 --weight-decay 1e-3 \
   --num-workers 12 --seed 0
 

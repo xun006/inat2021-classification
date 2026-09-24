@@ -24,7 +24,7 @@ CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON}" "${PROJECT_ROOT}/Classifier/train.py" 
   --global-pool \
   --lora-rank 16 --lora-alpha 32 --lora-dropout 0.1 \
   --lora-targets qkv proj \
-  --epochs 50 --warmup-epochs 5 \
+  --epochs 20 --warmup-epochs 5 \
   --batch-size 32 --accum-iter 4 --lr 1e-4 --weight-decay 1e-3 \
   --num-workers 12 --seed 0
 
