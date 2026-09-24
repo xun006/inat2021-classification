@@ -11,6 +11,7 @@ training.
 import math
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -62,7 +63,7 @@ class LoRALinear(nn.Module):
         return self.original(x) + self.scaling * self.lora_B(self.lora_A(self.dropout(x)))
 
 
-def inject_lora(model: nn.Module, target_modules: list[str],
+def inject_lora(model: nn.Module, target_modules: List[str],
                 rank: int = 16, alpha: int = 32, dropout: float = 0.1):
     """Replace every ``nn.Linear`` whose parent-name contains one of
     ``target_modules`` with a ``LoRALinear`` wrapper (in-place).
@@ -98,7 +99,7 @@ def build_model(
     lora_rank: int = 16,
     lora_alpha: int = 32,
     lora_dropout: float = 0.1,
-    lora_targets: list[str] | None = None,
+    lora_targets: Optional[List[str]] = None,
 ):
     """Build ViT + LoRA + fresh 4271-class head.
 
