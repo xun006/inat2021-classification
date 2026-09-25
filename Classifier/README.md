@@ -25,14 +25,14 @@
 # 先按服务器驱动安装配套 CUDA torch/torchvision，再安装其余依赖
 python -m pip install -r Classifier/requirements.txt
 cp Classifier/config.json Classifier/config.local.json
-# 编辑 config.local.json 中 train_dir / val_dir / class_map / pretrained
+# 默认路径已由用户确认；仅在服务器目录变化时编辑 config.local.json
 python -m unittest Classifier.test_stage1 -v
 python -m Classifier.run audit --config Classifier/config.local.json --output Classifier/outputs/audit
 ```
 
 首次正式实验建议给 audit 加 `--verify-images`，逐图解码排查损坏并保存宽高分位数（全量读取较慢）。训练和导出遇到损坏图片均报错，不静默跳过样本。
 
-路径支持仓库外的数据与模型；运行位置固定为仓库根目录。默认路径来自前置代码，**必须核实服务器实际路径**。若现有数据布局为 `classifier/train`、`classifier/val`，只改配置路径。每个划分必须具有一致的全部类目录，字典映射必须与 ImageFolder 字典序一致。
+路径支持仓库外的数据与模型；运行位置固定为仓库根目录。用户已确认数据根目录为 `/mnt/hdd8t/Mingle/xyyy/MisD/data`，预训练权重为 `/mnt/hdd8t/Mingle/xyyy/models/misclassification-aware/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth`，与 `config.json` 默认值一致。数据根目录下使用 `classifier_train`、`classifier_val` 和 `class_to_idx.json`；运行 audit 检查这些子目录和类别映射。如果实际布局为 `classifier/train`、`classifier/val`，只改配置中的对应路径。每个划分必须具有一致的全部类目录，字典映射必须与 ImageFolder 字典序一致。文件名里的下划线不需要添加反斜杠。
 
 权重支持原始 state_dict 或 `model`/`state_dict` 包装，移除 `module.` 前缀；明确丢弃 MAE decoder/mask_token 与预训练 head。平均池化时将 encoder norm 转为 fc_norm。除 head 外任何缺失、多余键或形状不匹配直接报错，避免误用 4271 类旧 linear-probe checkpoint 代替 PlantCLEF 初始化。当前不插值位置编码，真实实验使用与权重匹配的 224px；不能只改 image_size 就声称可用。
 
@@ -50,7 +50,7 @@ python -m Classifier.run train --config Classifier/config.local.json \
 # 导出时使用训练时保存的配置，避免 loss/seed 等不一致
 python -m Classifier.run export --config Classifier/outputs/l1_s42/config.json \
   --checkpoint Classifier/outputs/l1_s42/best.pt \
-  --split-dir /your/MisD/data/classifier_val \
+  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/classifier_val \
   --output Classifier/outputs/l1_s42/val_export
 ```
 
@@ -64,7 +64,7 @@ for seed in 42 43 44; do
     python -m Classifier.run train --config Classifier/config.local.json \
       --loss "$loss" --seed "$seed" --output "$run"
     python -m Classifier.run export --config "$run/config.json" \
-      --checkpoint "$run/best.pt" --split-dir /your/MisD/data/classifier_val \
+      --checkpoint "$run/best.pt" --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/classifier_val \
       --output "$run/val_export"
   done
 done
