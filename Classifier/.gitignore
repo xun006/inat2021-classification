@@ -1,0 +1,8 @@
+outputs/
+*.npy
+*.npz
+*.pth
+*.pt
+__pycache__/
+config.local.json
+.test_deps/
