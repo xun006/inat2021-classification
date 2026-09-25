@@ -1,9 +1,27 @@
 """Modern timm ViT with strict PlantCLEF MAE weights and fused-QKV LoRA."""
 import math
+from argparse import Namespace
+from contextlib import contextmanager
 from functools import partial
 import torch
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
+
+
+@contextmanager
+def allow_mae_namespace():
+    if hasattr(torch.serialization, "safe_globals"):
+        with torch.serialization.safe_globals([Namespace]):
+            yield
+    else:
+        # PyTorch 2.4 exposes allowlist functions without the context manager.
+        previous = torch.serialization.get_safe_globals()
+        try:
+            torch.serialization.add_safe_globals([Namespace])
+            yield
+        finally:
+            torch.serialization.clear_safe_globals()
+            torch.serialization.add_safe_globals(previous)
 
 
 class LoRALinear(nn.Module):
@@ -32,7 +50,9 @@ def build_model(cfg, initialize=True):
                               norm_layer=partial(nn.LayerNorm, eps=1e-6))
     report = {}
     if initialize:
-        checkpoint = torch.load(cfg["pretrained"], map_location="cpu", weights_only=True)
+        # Original MAE checkpoints include training args alongside tensor weights.
+        with allow_mae_namespace():
+            checkpoint = torch.load(cfg["pretrained"], map_location="cpu", weights_only=True)
         state = checkpoint.get("model", checkpoint.get("state_dict", checkpoint))
         state = {(k[7:] if k.startswith("module.") else k): v for k, v in state.items()}
         # An MAE pretraining checkpoint can contain the reconstruction decoder.

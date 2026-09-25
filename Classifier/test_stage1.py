@@ -1,6 +1,7 @@
 """Run: python -m unittest Classifier.test_stage1 -v (CPU, no real weights/data)."""
 import json
 import random
+from argparse import Namespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -104,7 +105,7 @@ class PipelineTests(unittest.TestCase):
                 state[k.replace(".base.", ".").replace("fc_norm.", "norm.")] = value
             state["decoder_embed.weight"] = torch.zeros(2, 2)
             cfg["pretrained"] = str(root / "pretrained.pt")
-            torch.save({"model": state}, cfg["pretrained"])
+            torch.save({"model": state, "args": Namespace(model="vit_tiny_patch16", epochs=100)}, cfg["pretrained"])
             seed_all(42)
             model, report = build_model(cfg)
             self.assertGreater(report["trainable_parameters"], 0)

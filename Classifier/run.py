@@ -267,6 +267,11 @@ def main():
             write_json(args.output / "image_audit.json", {"train": image_audit(train), "val": image_audit(val)})
         print(json.dumps({k: v for k, v in stats.items() if k != "train_counts"}, indent=2))
         return
+    if args.mode == "train":
+        print(f"Training: epochs={cfg['epochs']}, batch_size={cfg['batch_size']}, "
+              f"train_samples={stats['train_samples']}, "
+              f"batches_per_epoch={math.ceil(stats['train_samples'] / cfg['batch_size'])}, "
+              f"loss={cfg['loss']}, seed={cfg['seed']}", flush=True)
     weight_hash = sha256(cfg["pretrained"])
     if saved and saved["pretrained_sha256"] != weight_hash:
         raise ValueError("Pretrained weight SHA256 mismatch")
