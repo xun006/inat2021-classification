@@ -105,4 +105,4 @@ FP16 AMP 溢出处理：先 unscale 并检查梯度，有限时才裁剪；出�
 
 ## GitHub 与交接
 
-`Classifier/.gitignore` 已排除模型、outputs、预测矩阵、本机配置与测试依赖。代码未自动 commit/push；准备提交时检查 `git status`，只加入 Classifier 源码及文档。外部 `Hand_off.md` 不在当前仓库，需另行保管。每次迭代向其**末尾追加**目的、设计决策、代码变化、实际运行/未运行项、结果、问题、下一步，不改写历史。
+`Classifier/.gitignore` 已排除模型、outputs、预测矩阵、本机配置、测试依赖与交接记录副本。提交时只加入源码和运行说明。后续迭代记录仅追加到本机仓库外的 `E:\misclassification failure detection\Hand_off.md`，不在仓库中创建或提交交接文档副本，不改写本机交接历史。

@@ -6,3 +6,8 @@ outputs/
 __pycache__/
 config.local.json
 .test_deps/
+
+# Handoff records are maintained only in the external local Hand_off.md.
+HANDOFF*.md
+Hand_off.md
+hand_off.md
