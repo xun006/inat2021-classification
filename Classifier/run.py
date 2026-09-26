@@ -92,11 +92,31 @@ def learning_rate_factor(cfg, progress):
                               (cfg["epochs"] - cfg["lr_warmup"])))
 
 
+def optimizer_step(model, optimizer, scaler, max_norm):
+    """Let GradScaler skip overflowed gradients before attempting clipping."""
+    scaler.unscale_(optimizer)
+    parameters = [p for p in model.parameters() if p.requires_grad and p.grad is not None]
+    if not parameters:
+        raise RuntimeError("No gradients found")
+    finite = bool(torch.stack([torch.isfinite(p.grad).all() for p in parameters]).all())
+    scale_before = scaler.get_scale()
+    if not finite and not scaler.is_enabled():
+        raise FloatingPointError("Nonfinite unscaled gradients without GradScaler; inspect model/loss/data")
+    if finite:
+        torch.nn.utils.clip_grad_norm_(parameters, max_norm, error_if_nonfinite=True)
+    # unscale_ already recorded inf/nan. step skips the entire optimizer update
+    # on overflow (including AdamW weight decay); update then reduces the scale.
+    scaler.step(optimizer)
+    scaler.update()
+    return {"skipped": not finite, "scale_before": scale_before, "scale_after": scaler.get_scale()}
+
+
 def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, out):
     model.train()
     batches = loader(dataset, cfg, True, epoch)
     weight = ranking_weight(cfg, epoch)
     totals = dict(loss=0., l1=0., l2=0., l3=0., correct=0, pairs=0, samples=0)
+    skipped_steps = consecutive_skips = 0
     for step, (images, labels, _) in enumerate(batches):
         progress = epoch + (step + 1) / len(batches)
         factor = learning_rate_factor(cfg, progress)
@@ -128,10 +148,18 @@ def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, out):
             with (out / "diagnostics.jsonl").open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
         scaler.scale(total).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], cfg["grad_clip"], error_if_nonfinite=True)
-        scaler.step(optimizer)
-        scaler.update()
+        update = optimizer_step(model, optimizer, scaler, cfg["grad_clip"])
+        if update["skipped"]:
+            skipped_steps += 1
+            consecutive_skips += 1
+            with (out / "amp_events.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(dict(epoch=epoch, step=step, **update)) + "\n")
+            print(f"AMP overflow: epoch={epoch+1} step={step}; update skipped, "
+                  f"scale {update['scale_before']} -> {update['scale_after']}", flush=True)
+            if consecutive_skips >= 20:
+                raise FloatingPointError("20 consecutive AMP overflows; stop and investigate numerical stability")
+        else:
+            consecutive_skips = 0
         n = len(labels)
         for key, value in (("loss", total), ("l1", l1), ("l2", l2), ("l3", l3)):
             totals[key] += value.item() * n
@@ -140,8 +168,11 @@ def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, out):
         totals["pairs"] += pairs
         if step % 50 == 0:
             print(f"epoch {epoch+1} step {step}/{len(batches)} loss={total.item():.5f} pairs={pairs}", flush=True)
+    if skipped_steps == len(batches):
+        raise FloatingPointError("No successful optimizer updates in this epoch")
     return {**{k: totals[k] / totals["samples"] for k in ("loss", "l1", "l2", "l3", "correct")},
-            "pairs": totals["pairs"], "lambda3": weight}
+            "pairs": totals["pairs"], "lambda3": weight, "amp_skipped_steps": skipped_steps,
+            "optimizer_steps": len(batches) - skipped_steps, "amp_scale": scaler.get_scale()}
 
 
 @torch.inference_mode()
@@ -314,7 +345,7 @@ def main():
         random.setstate(saved["python_rng"])
         np.random.set_state(saved["numpy_rng"])
         # Remove rows from a failed/uncommitted epoch before continuing.
-        for name in ("history.jsonl", "diagnostics.jsonl"):
+        for name in ("history.jsonl", "diagnostics.jsonl", "amp_events.jsonl"):
             path = args.output / name
             if path.exists():
                 rows = [line for line in path.read_text().splitlines() if json.loads(line)["epoch"] < start]

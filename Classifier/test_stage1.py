@@ -69,6 +69,38 @@ class LossTests(unittest.TestCase):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_scaler_skips_overflow_then_recovers(self):
+        from .run import optimizer_step
+        for invalid in (float("inf"), float("nan")):
+            model = torch.nn.Linear(2, 1)
+            opt = torch.optim.AdamW(model.parameters(), lr=.01)
+            scaler = torch.amp.GradScaler("cpu", init_scale=8.)
+            x = torch.ones(2, 2)
+            scaler.scale(model(x).sum()).backward()
+            model.weight.grad[0, 0] = invalid
+            before = {k: p.detach().clone() for k, p in model.named_parameters()}
+            event = optimizer_step(model, opt, scaler, 1.)
+            self.assertTrue(event["skipped"])
+            self.assertEqual(event["scale_after"], 4.)
+            self.assertEqual(len(opt.state), 0)
+            for k, p in model.named_parameters():
+                torch.testing.assert_close(p, before[k], rtol=0, atol=0)
+            opt.zero_grad(set_to_none=True)
+            scaler.scale(model(x).sum()).backward()
+            self.assertFalse(optimizer_step(model, opt, scaler, 1.)["skipped"])
+            self.assertFalse(torch.equal(model.weight, before["weight"]))
+            self.assertTrue(torch.isfinite(model.weight).all())
+
+    def test_non_amp_nonfinite_still_fails(self):
+        from .run import optimizer_step
+        model = torch.nn.Linear(2, 1)
+        opt = torch.optim.AdamW(model.parameters())
+        model(torch.ones(1, 2)).sum().backward()
+        model.weight.grad[0, 0] = float("inf")
+        with self.assertRaises(FloatingPointError):
+            optimizer_step(model, opt, torch.amp.GradScaler("cpu", enabled=False), 1.)
+        self.assertEqual(len(opt.state), 0)
+
     def test_twenty_epoch_protocol(self):
         from .run import learning_rate_factor, validate_config
         cfg = json.loads(Path("Classifier/config.json").read_text())

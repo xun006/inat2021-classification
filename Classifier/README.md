@@ -93,6 +93,10 @@ Head/Medium/Tail 按**分类训练集**计数：>100 / 20–100 / <20，空组�
 
 ## 当前验证与边界
 
+FP16 AMP 溢出处理：先 unscale 并检查梯度，有限时才裁剪；出现 Inf/NaN 时由 GradScaler 跳过 optimizer 更新并降低 scale，记录 `amp_events.jsonl`。history 记录 `amp_skipped_steps`、实际 `optimizer_steps` 和 scale。训练指标仍覆盖所有已处理样本（包括跳过更新的 batch）；LR 按数据批次进度推进，跳过的 batch 不重试。比较实验时同时检查跳过次数，不能把频繁跳步当作正常收敛。连续 20 批溢出、整轮零更新、非有限 loss 或未启用 scaler 时出现非有限梯度仍停止。此逻辑适用于全部四组，20 轮配置和 batch=32 不变。参考 [PyTorch AMP 梯度裁剪与跳步](https://docs.pytorch.org/docs/stable/notes/amp_examples.html)。
+
+若第一轮中途崩溃，尚无 last.pt，使用新的输出目录重新启动（如 `Classifier/outputs/ep20/l1_s42_retry1`）；保留失败目录用于排查，不覆盖它。后续汇总只纳入每个 loss/seed 的一个成功正式运行。
+
 本机没有真实数据集与 PlantCLEF 权重，因此无法报告准确率、真实显存占用或正式训练耗时。合成测试仅验证实现链路，不代表真实模型性能。服务器首次运行须保留权重加载报告、audit、测试结果和 smoke 输出；确认这些内容后再投入 12 组完整训练。
 
 2026-09-25 本地 7 项测试全部通过：损失公式/梯度、四组优化器更新、L3 warmup、并列分数指标、模拟 MAE 权重加载、LoRA 参数冻结、平均池化前向一致性、两 epoch 训练与断点恢复参数逐位一致、导出矩阵检查及划分交叉拒绝。环境为现有 Python 3.8.20 / torch 2.4.1 CPU + 工作区隔离安装的 timm 1.0.22、sklearn 1.3.2；服务器推荐环境仍为 Python 3.10/3.11。语法编译、CLI 帮助、Git diff 空白检查通过。
