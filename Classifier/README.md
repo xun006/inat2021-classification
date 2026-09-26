@@ -8,12 +8,12 @@
 2. **预检查**：检查类映射、训练/验证样本交叉和类别频率。`audit` 检查相同相对文件名、硬链接与软链接复用，不做图像内容哈希；重命名复制图、同一 observation 多图需要结合原始元数据另做泄漏审计。数据实际规模、长尾程度由统计决定，不能预先认定一定长尾。
 3. **小规模验收**：先运行单元测试；随后在真实服务器复制配置，设 epochs=2、lr_warmup=0、l3_warmup=0、l3_ramp=1，单独输出 smoke 目录，确认权重加载、显存与导出。它不计入正式结果。
 4. **先跑基线**：seed=42 的 L1、L2。检查 loss 曲线、正负 BCE 项、每项分类头梯度范数。BCE 固定为 `mean over all batch/class elements`，因此负项可能占主导，不默认加正类权重。
-5. **再跑组合**：相同配置与 seed 跑 L1+L3、L2+L3。只改变 loss。L3 第 1–3 epoch 关闭，第 4–6 epoch 权重 1/3、2/3、1，后续为 1。若某项明显主导梯度，先记录，再以新实验 ID 在验证集比较 lambda3={0.1,0.5,1}。
+5. **再跑组合**：相同配置与 seed 跑 L1+L3、L2+L3。只改变 loss。L3 第 1–2 epoch 关闭，第 3 epoch 权重 0.5，第 4–20 epoch 为 1。若某项明显主导梯度，先记录，再以新实验 ID 在验证集比较 lambda3={0.1,0.5,1}。
 6. **重复验证**：四组均补 seed=43、44，报告每次结果与均值/样本标准差。四组总计 12 次训练。初始化、样本顺序和增强在同 seed 下相同；修改 batch size 要对四组统一修改，尤其 L3 依赖物理 batch 中的正确/错误配对。
 7. **选择模型**：每次训练 best.pt 以 classifier_val Top-1 最高选 epoch（同分取最早）。最终跨配置比较 Top-1、Macro-F1、各频率组、AUROC、AUPR-Error、AURC 及高置信错误。建议预先把可接受 Top-1 降幅设为 0.5 个百分点，作为待验证的研究约束；在满足约束者中检查排序指标与多 seed 稳定性，记录最终选择理由。不可只看某一检测指标或测试集挑模型。
 8. **固定模型后**：显式导出 detector_train、detector_calibration 和 official_val。阶段一选择期间仅导出 classifier_val。官方 val 最终评估一次；所有阈值与超参数用验证集决定。
 
-默认起点：ViT-L/16、224px、平均池化；每层 fused attention QKV 加 LoRA（包含 Q/K/V 三段），rank=8、alpha=16、dropout=0；骨干冻结、线性分类头重新初始化。AdamW，LoRA LR=1e-4、head LR=1e-3、weight_decay=0.05、30 epoch、batch=32、LR 预热 3 epoch 后 cosine、梯度裁剪 1、CUDA FP16 训练/FP32 验证。增强固定 RandomResizedCrop(0.5–1.0)+水平翻转；不使用 Mixup/CutMix，保持单标签与 L3 正误分组含义。
+默认起点：ViT-L/16、224px、平均池化；每层 fused attention QKV 加 LoRA（包含 Q/K/V 三段），rank=8、alpha=16、dropout=0；骨干冻结、线性分类头重新初始化。AdamW，LoRA LR=1e-4、head LR=1e-3、weight_decay=0.05、20 epoch、batch=32、LR 预热 2 epoch 后 cosine、梯度裁剪 1、CUDA FP16 训练/FP32 验证。增强固定 RandomResizedCrop(0.5–1.0)+水平翻转；不使用 Mixup/CutMix，保持单标签与 L3 正误分组含义。
 
 这是**单进程单 GPU**实现，一张卡一个实验；多张卡可以分别启动独立实验。不要用 torchrun：已显式拒绝 WORLD_SIZE>1。没有用梯度累积模拟更大的 L3 batch。ViT-L 的实际显存须在服务器测量，OOM 时统一减小四组 batch。
 
@@ -38,20 +38,24 @@ python -m Classifier.run audit --config Classifier/config.local.json --output Cl
 
 ## 训练、恢复与导出
 
+2026-09-26 正式方案统一为 20 轮：LR warmup、L3 warmup、L3 ramp 都从 3 轮改为 2 轮，保持各占总预算 10% 的设计比例。学习率在第 2 轮结束达到设定峰值，随后 18 轮 cosine 衰减，在第 20 轮结束降到 0。batch=32、峰值学习率、LoRA、损失定义及其余参数保持一致；不因训练轮数减少而额外改变学习率或损失权重。该方案是统一计算预算的对照，不预先保证 20 轮收敛。
+
+四组 loss × 三个 seed 都从相同 PlantCLEF 权重重新初始化，完整运行 20 轮，不按各组表现临时提前停止。模型仍按验证 Top-1 选择 best；若需研究更长训练，另开完整、统一设置的对照。旧 30 轮 checkpoint 不用于新 20 轮续训，配置一致性检查会拒绝混用。新输出统一放在 `Classifier/outputs/ep20/`，不混入旧实验结果。服务器已有 `config.local.json` 不会随 git pull 更新：请明确将 epochs/lr_warmup/l3_warmup/l3_ramp 改成 20/2/2/2，或直接使用新的 `Classifier/config.json`。
+
 ```bash
 python -m Classifier.run train --config Classifier/config.local.json \
-  --loss l1 --seed 42 --output Classifier/outputs/l1_s42
+  --loss l1 --seed 42 --output Classifier/outputs/ep20/l1_s42
 
 # 同一配置恢复，必须使用该目录 last.pt；从完整 epoch 边界恢复
 python -m Classifier.run train --config Classifier/config.local.json \
-  --loss l1 --seed 42 --output Classifier/outputs/l1_s42 \
-  --checkpoint Classifier/outputs/l1_s42/last.pt
+  --loss l1 --seed 42 --output Classifier/outputs/ep20/l1_s42 \
+  --checkpoint Classifier/outputs/ep20/l1_s42/last.pt
 
 # 导出时使用训练时保存的配置，避免 loss/seed 等不一致
-python -m Classifier.run export --config Classifier/outputs/l1_s42/config.json \
-  --checkpoint Classifier/outputs/l1_s42/best.pt \
+python -m Classifier.run export --config Classifier/outputs/ep20/l1_s42/config.json \
+  --checkpoint Classifier/outputs/ep20/l1_s42/best.pt \
   --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/classifier_val \
-  --output Classifier/outputs/l1_s42/val_export
+  --output Classifier/outputs/ep20/l1_s42/val_export
 ```
 
 一轮基线检查完毕后可执行四组正式矩阵；已存在的目录会拒绝覆盖，可手动删去已经完成的循环项：
@@ -60,7 +64,7 @@ python -m Classifier.run export --config Classifier/outputs/l1_s42/config.json \
 set -euo pipefail
 for seed in 42 43 44; do
   for loss in l1 l2 l1_l3 l2_l3; do
-    run="Classifier/outputs/${loss}_s${seed}"
+    run="Classifier/outputs/ep20/${loss}_s${seed}"
     python -m Classifier.run train --config Classifier/config.local.json \
       --loss "$loss" --seed "$seed" --output "$run"
     python -m Classifier.run export --config "$run/config.json" \
@@ -68,7 +72,7 @@ for seed in 42 43 44; do
       --output "$run/val_export"
   done
 done
-python -m Classifier.summarize Classifier/outputs --output Classifier/outputs/comparison
+python -m Classifier.summarize Classifier/outputs/ep20 --output Classifier/outputs/ep20/comparison
 ```
 
 多 GPU 运行可用 `CUDA_VISIBLE_DEVICES=1 python ...` 给不同实验分配不同卡，输出目录必须不同。训练配置不可在恢复时改变；数据/权重可迁移路径，但类映射、划分指纹、预训练 SHA256 必须一致。恢复含优化器、GradScaler、Python/NumPy/Torch/CUDA RNG 状态；不承诺跨硬件/软件版本的逐位一致性。仅加载自己生成、可信的 adapter checkpoint（其中含 Python RNG 对象）。

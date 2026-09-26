@@ -84,6 +84,14 @@ def grad_norm(loss, parameters):
                                 loss.new_zeros(()))).item())
 
 
+def learning_rate_factor(cfg, progress):
+    """Linear warmup then cosine, ending at the configured training horizon."""
+    if progress < cfg["lr_warmup"]:
+        return progress / max(1, cfg["lr_warmup"])
+    return 0.5 * (1 + math.cos(math.pi * (progress - cfg["lr_warmup"]) /
+                              (cfg["epochs"] - cfg["lr_warmup"])))
+
+
 def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, out):
     model.train()
     batches = loader(dataset, cfg, True, epoch)
@@ -91,8 +99,7 @@ def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, out):
     totals = dict(loss=0., l1=0., l2=0., l3=0., correct=0, pairs=0, samples=0)
     for step, (images, labels, _) in enumerate(batches):
         progress = epoch + (step + 1) / len(batches)
-        factor = min(1., progress / max(1, cfg["lr_warmup"])) if progress < cfg["lr_warmup"] else (
-            0.5 * (1 + math.cos(math.pi * (progress - cfg["lr_warmup"]) / (cfg["epochs"] - cfg["lr_warmup"]))))
+        factor = learning_rate_factor(cfg, progress)
         for group in optimizer.param_groups:
             group["lr"] = group["initial_lr"] * factor
         images, labels = images.to(device), labels.to(device)

@@ -69,6 +69,25 @@ class LossTests(unittest.TestCase):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_twenty_epoch_protocol(self):
+        from .run import learning_rate_factor, validate_config
+        cfg = json.loads(Path("Classifier/config.json").read_text())
+        self.assertEqual(cfg["epochs"], 20)
+        self.assertEqual(cfg["batch_size"], 32)
+        self.assertEqual((cfg["lr_warmup"], cfg["l3_warmup"], cfg["l3_ramp"]), (2, 2, 2))
+        for loss in ("l1", "l2", "l1_l3", "l2_l3"):
+            cfg["loss"] = loss
+            validate_config(cfg)
+            weights = [ranking_weight(cfg, e) for e in range(20)]
+            self.assertEqual(weights, [0., 0., .5] + [1.] * 17 if loss.endswith("_l3") else [0.] * 20)
+        self.assertEqual(learning_rate_factor(cfg, 0), 0.)
+        self.assertEqual(learning_rate_factor(cfg, 1), .5)
+        self.assertEqual(learning_rate_factor(cfg, 2), 1.)
+        self.assertAlmostEqual(learning_rate_factor(cfg, 11), .5)
+        self.assertAlmostEqual(learning_rate_factor(cfg, 20), 0.)
+        factors = [learning_rate_factor(cfg, t) for t in np.linspace(2, 20, 100)]
+        self.assertTrue(all(a >= b for a, b in zip(factors, factors[1:])))
+
     def test_metric_ties(self):
         from .metrics import evaluate_arrays
         a = evaluate_arrays([0, 0], [0, 1], [.5, .5], [True, True], [10, 10])[0]
