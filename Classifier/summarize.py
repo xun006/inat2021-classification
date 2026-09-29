@@ -31,8 +31,10 @@ def main():
     summaries = {}
     for loss, values in grouped.items():
         summaries[loss] = {"n_runs": len(values), "seeds": [v["seed"] for v in values]}
-        for metric in ("top1", "top5", "macro_f1", "auroc_error", "aupr_error", "aurc"):
-            a = [v[metric] for v in values if v[metric] is not None]
+        for metric in ("top1", "top5", "macro_f1", "auroc_error", "aupr_error", "fpr_at_95_tpr", "aurc"):
+            # Older completed exports predate FPR@95TPR; summarize them as null
+            # instead of making the whole comparison unusable.
+            a = [v.get(metric) for v in values if v.get(metric) is not None]
             summaries[loss][metric] = {"mean": float(np.mean(a)) if a else None,
                                        "std": float(np.std(a, ddof=1)) if len(a)>1 else None}
     (args.output / "summary.json").write_text(json.dumps(summaries, indent=2, allow_nan=False), encoding="utf-8")

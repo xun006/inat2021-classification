@@ -11,7 +11,7 @@
 5. **再跑组合**：相同配置与 seed 跑 L1+L3、L2+L3。只改变 loss。L3 第 1–2 epoch 关闭，第 3 epoch 权重 0.5，第 4–20 epoch 为 1。若某项明显主导梯度，先记录，再以新实验 ID 在验证集比较 lambda3={0.1,0.5,1}。
 6. **重复验证**：四组均补 seed=43、44，报告每次结果与均值/样本标准差。四组总计 12 次训练。初始化、样本顺序和增强在同 seed 下相同；修改 batch size 要对四组统一修改，尤其 L3 依赖物理 batch 中的正确/错误配对。
 7. **选择模型**：每次训练 best.pt 以 classifier_val Top-1 最高选 epoch（同分取最早）。最终跨配置比较 Top-1、Macro-F1、各频率组、AUROC、AUPR-Error、AURC 及高置信错误。建议预先把可接受 Top-1 降幅设为 0.5 个百分点，作为待验证的研究约束；在满足约束者中检查排序指标与多 seed 稳定性，记录最终选择理由。不可只看某一检测指标或测试集挑模型。
-8. **固定模型后**：显式导出 detector_train、detector_calibration 和 official_val。阶段一选择期间仅导出 classifier_val。官方 val 最终评估一次；所有阈值与超参数用验证集决定。
+8. **固定模型后**：显式导出 detector_train、detector_calibration 和 official_val。阶段一选择期间仅导出 classifier_val。错分阈值只用 detector_calibration 确定，官方 val 最终评估一次；所有阈值与超参数都不能用官方 val 调整。
 
 默认起点：ViT-L/16、224px、平均池化；每层 fused attention QKV 加 LoRA（包含 Q/K/V 三段），rank=8、alpha=16、dropout=0；骨干冻结、线性分类头重新初始化。AdamW，LoRA LR=1e-4、head LR=1e-3、weight_decay=0.05、20 epoch、batch=32、LR 预热 2 epoch 后 cosine、梯度裁剪 1、CUDA FP16 训练/FP32 验证。增强固定 RandomResizedCrop(0.5–1.0)+水平翻转；不使用 Mixup/CutMix，保持单标签与 L3 正误分组含义。
 
@@ -75,6 +75,46 @@ done
 python -m Classifier.summarize Classifier/outputs/ep20 --output Classifier/outputs/ep20/comparison
 ```
 
+## L2 最大 Sigmoid 错分检测
+
+固定 L2 的 `best.pt` 后，分别导出错分阈值校准集和最终测试集。多分类类别仍由
+`argmax(logits)` 决定；错分检测置信度为 `max(sigmoid(logits))`，错误分数为
+`1 - confidence`。
+
+```bash
+run=Classifier/outputs/ep20/l2_s42
+
+python -m Classifier.run export --config "$run/config.json" \
+  --checkpoint "$run/best.pt" \
+  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/detector_calibration \
+  --output "$run/detector_calibration_export"
+
+python -m Classifier.run export --config "$run/config.json" \
+  --checkpoint "$run/best.pt" \
+  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
+  --output "$run/official_val_export"
+
+python -m Classifier.evaluate_failure \
+  --calibration-export "$run/detector_calibration_export" \
+  --test-export "$run/official_val_export" \
+  --output "$run/failure_evaluation" \
+  --target-error-tpr 0.95
+```
+
+该命令仅从两个导出的 `samples.csv` 读取正确标记和最大 Sigmoid，不加载大型
+概率矩阵。它拒绝 checkpoint、预训练骨干或类别映射不一致的两份导出，也拒绝
+把非 `detector_calibration` / `official_val` 划分用于对应角色。阈值只从
+`detector_calibration` 的实际置信度组确定：使用严格规则
+`confidence < tau` 判错，并整体处理同置信度样本。在达到至少 95% 错误召回的
+候选中取最小阈值，以减少正确样本误报。
+
+最终目录包含：
+
+- `threshold.json`：冻结的阈值、校准集实际 TPR/FPR 和模型身份；
+- `metrics.json`：official_val 的 AUROC、Error AUPRC、FPR@95TPR 和 AURC；
+- `operating_point.json`：冻结阈值在 official_val 上的混淆矩阵及精确率、召回率、F1、误报率和拒绝率；
+- `summary.csv` / `summary.md`：可直接汇总或粘贴到实验记录中的最终表格。
+
 多 GPU 运行可用 `CUDA_VISIBLE_DEVICES=1 python ...` 给不同实验分配不同卡，输出目录必须不同。训练配置不可在恢复时改变；数据/权重可迁移路径，但类映射、划分指纹、预训练 SHA256 必须一致。恢复含优化器、GradScaler、Python/NumPy/Torch/CUDA RNG 状态；不承诺跨硬件/软件版本的逐位一致性。仅加载自己生成、可信的 adapter checkpoint（其中含 Python RNG 对象）。
 
 ## 产物及指标约定
@@ -87,7 +127,7 @@ python -m Classifier.summarize Classifier/outputs/ep20 --output Classifier/outpu
 - `metrics.json`、`per_class.csv`、`risk_coverage.npz`、`provenance.json`：完整评估、逐类 accuracy、风险覆盖曲线、导出模型身份与映射。`complete.json` 仅成功结束后出现；未完成导出不可当正式结果使用，改用新目录重新导出。
 - `comparison/runs.csv`、`summary.json`：按 loss 汇总验证导出。请只汇总同一固定设置的实验；不要把不同 batch、lambda 或超参数的结果混在同一目录。
 
-预测用 argmax(logits)，数学上等价于 Sigmoid argmax，且避免浮点 Sigmoid 饱和造成伪并列。最大 Sigmoid 是置信分数，未经校准不等于预测正确概率。检测正类=分类错误，error_score=1-max_sigmoid。AUPR-Error 使用 sklearn average precision；AURC 使用离散覆盖率风险均值，置信度并列时计算组内随机顺序的期望风险。全对/全错时 AUROC 为 null，全对时 AUPR 为 null。
+预测用 argmax(logits)，数学上等价于 Sigmoid argmax，且避免浮点 Sigmoid 饱和造成伪并列。最大 Sigmoid 是置信分数，未经校准不等于预测正确概率。检测正类=分类错误，error_score=1-max_sigmoid。AUPR-Error 使用 sklearn average precision；FPR@95TPR 使用 ROC 曲线线性插值；AURC 使用离散覆盖率风险均值，置信度并列时计算组内随机顺序的期望风险。全对或全错时 AUROC、AUPR-Error、FPR@95TPR 为 null，AURC 仍有定义。
 
 Head/Medium/Tail 按**分类训练集**计数：>100 / 20–100 / <20，空组返回 null；Macro-F1 固定包含全部 C 类。tau 默认 0.5 仅作描述性统计，高置信错分和低置信正确数同时保存，不用它选择测试集阈值。分数直方图为 [0,1] 的 20 个等宽区间；逐样本 margin 可从 CSV 再分析。
 
