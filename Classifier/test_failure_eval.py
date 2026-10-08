@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .evaluate_failure import run, select_threshold
+from .evaluate_margin import run as run_margin
 from .metrics import failure_detection_metrics
 
 
@@ -57,7 +58,13 @@ class FailureEvaluationCommandTests(unittest.TestCase):
         with (export / "samples.csv").open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=["sample_id", "correct", "max_sigmoid_probability"],
+                fieldnames=[
+                    "sample_id",
+                    "correct",
+                    "max_sigmoid_probability",
+                    "top1_logit",
+                    "top2_logit",
+                ],
             )
             writer.writeheader()
             for index, (correct, confidence) in enumerate(rows):
@@ -66,6 +73,8 @@ class FailureEvaluationCommandTests(unittest.TestCase):
                         "sample_id": "{}/{}.jpg".format(index % 2, index),
                         "correct": correct,
                         "max_sigmoid_probability": confidence,
+                        "top1_logit": confidence,
+                        "top2_logit": confidence - 0.5,
                     }
                 )
         (export / "complete.json").write_text(
@@ -130,6 +139,49 @@ class FailureEvaluationCommandTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "identity mismatch"):
                 run(calibration, official, root / "result", .95)
+
+    def test_margin_end_to_end_uses_existing_csv_logits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calibration = self.make_export(
+                root,
+                "detector_calibration",
+                [(0, -2.0), (0, -1.0), (1, 1.0), (1, 2.0)],
+            )
+            official = self.make_export(
+                root,
+                "official_val",
+                [(1, 2.0), (0, -2.0), (1, 1.0), (0, -1.0)],
+            )
+            metrics = run_margin(calibration, official, root / "margin-result", .95)
+            self.assertEqual(
+                set(metrics), {"auroc", "error_auprc", "fpr_at_95_tpr", "aurc"}
+            )
+            threshold = json.loads(
+                (root / "margin-result" / "threshold.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(threshold["method"], "sigmoid_margin")
+            self.assertEqual(
+                threshold["confidence_definition"],
+                "sigmoid(top1_logit) - sigmoid(top2_logit)",
+            )
+
+    def test_margin_rejects_invalid_logit_order(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calibration = self.make_export(
+                root, "detector_calibration", [(0, .1), (1, .9)]
+            )
+            official = self.make_export(root, "official_val", [(0, .1), (1, .9)])
+            with (official / "samples.csv").open(encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            rows[0]["top2_logit"] = str(float(rows[0]["top1_logit"]) + 1.0)
+            with (official / "samples.csv").open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            with self.assertRaisesRegex(ValueError, "top1_logit"):
+                run_margin(calibration, official, root / "margin-result", .95)
 
 
 if __name__ == "__main__":

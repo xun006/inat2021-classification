@@ -115,6 +115,29 @@ python -m Classifier.evaluate_failure \
 - `operating_point.json`：冻结阈值在 official_val 上的混淆矩阵及精确率、召回率、F1、误报率和拒绝率；
 - `summary.csv` / `summary.md`：可直接汇总或粘贴到实验记录中的最终表格。
 
+## Margin 对照方法
+
+Margin 使用同一 L2 模型、同一预测和同一数据划分，置信度定义为前两名
+Sigmoid 概率之差：`sigmoid(top1_logit) - sigmoid(top2_logit)`。差值越小越可能
+错分。它直接复用上述两个导出目录中的 `samples.csv`，不重新训练、不重新推理，
+也不加载 `logits.npy` 或 `sigmoid.npy`。阈值仍只在 `detector_calibration` 上确定，
+`official_val` 仅作最终评估。
+
+```bash
+run=Classifier/outputs/ep20/l2_s42
+
+python -m Classifier.evaluate_margin \
+  --calibration-export "$run/detector_calibration_export" \
+  --test-export "$run/official_val_export" \
+  --output "$run/margin_evaluation" \
+  --target-error-tpr 0.95
+```
+
+结果写入 `Classifier/outputs/ep20/l2_s42/margin_evaluation/`，文件与
+MaxSigmoid 的 `failure_evaluation/` 一致：`threshold.json`、`metrics.json`、
+`operating_point.json`、`summary.csv` 和 `summary.md`。比较时以两个目录各自的
+`summary.csv` 为准；两种方法分别在相同校准集上冻结自己的阈值。
+
 多 GPU 运行可用 `CUDA_VISIBLE_DEVICES=1 python ...` 给不同实验分配不同卡，输出目录必须不同。训练配置不可在恢复时改变；数据/权重可迁移路径，但类映射、划分指纹、预训练 SHA256 必须一致。恢复含优化器、GradScaler、Python/NumPy/Torch/CUDA RNG 状态；不承诺跨硬件/软件版本的逐位一致性。仅加载自己生成、可信的 adapter checkpoint（其中含 Python RNG 对象）。
 
 ## 产物及指标约定
