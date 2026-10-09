@@ -79,4 +79,3 @@ python -m Classifier.abc_comparison.compare \
 比较器先严格确认四组 sample_id 及顺序完全相同，再从各自 logits 分批重算 Max-Softmax、Max-Sigmoid、sigmoid(logit margin)；输出 `metrics_by_score.csv` 和 `contrasts.json`。核心分类对比为 D−B、C−A、B−A、D−C，以及交互效应 `(D−B)−(C−A)`。只有一个 seed，因此结果是描述性对比，不能据此声称统计显著。
 
 模型选择和所有调参只使用 classifier_val。阈值在后续 detector_calibration 上确定；official_val 留作最终一次评估。
-

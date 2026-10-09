@@ -84,4 +84,3 @@ def build_model(cfg: dict, initialize: bool = True):
         attention_heads=heads,
     )
     return model, report
-
