@@ -58,6 +58,7 @@ MisD/output/
 MisD/TopK-ProtoFD/outputs/
 MisD/TopK-ProtoFD/prototypes/
 MisD/confidnet_tcp/__pycache__/
+baselines/outputs/
 
 # Generated analysis artifacts
 MisD/analyse_data/results/
