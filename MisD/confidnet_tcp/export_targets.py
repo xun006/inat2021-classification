@@ -16,7 +16,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from data import PlantSplit
-from teacher import DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models, file_sha256
+from teacher import (
+    DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models,
+    teacher_provenance,
+)
 
 
 def arguments() -> argparse.Namespace:
@@ -25,6 +28,9 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--split", choices=("detector_train", "detector_calibration"), required=True)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--class-map", type=Path, default=DEFAULT_CLASS_MAP)
+    parser.add_argument("--teacher-kind", choices=("legacy", "classifier_c"), default="legacy")
+    parser.add_argument("--classifier-config", type=Path,
+                        help="Classifier C run config.json; required with classifier_c")
     parser.add_argument("--output-dir", type=Path, default=MISD_ROOT / "output/confidnet_tcp/cache")
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=8)
@@ -39,7 +45,13 @@ def main() -> None:
     dataset = PlantSplit(args.data_root, args.split, args.class_map)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
                         pin_memory=args.device.startswith("cuda"), persistent_workers=args.num_workers > 0)
-    teacher, _ = build_models(args.checkpoint, args.class_map, args.device)
+    provenance = teacher_provenance(
+        args.checkpoint, args.class_map, args.teacher_kind, args.classifier_config
+    )
+    teacher, _ = build_models(
+        args.checkpoint, args.class_map, args.device,
+        args.teacher_kind, args.classifier_config,
+    )
     count = len(dataset)
     feature = torch.empty((count, 1024), dtype=torch.float16)
     tcp = torch.empty(count, dtype=torch.float32)
@@ -49,6 +61,7 @@ def main() -> None:
     msp = torch.empty(count, dtype=torch.float32)
     margin = torch.empty(count, dtype=torch.float32)
     sample_id: list[str] = [""] * count
+    sample_key: list[str] = [""] * count
     with torch.inference_mode():
         for batch_number, batch in enumerate(loader, start=1):
             images = batch["image"].to(args.device, non_blocking=True)
@@ -67,20 +80,24 @@ def main() -> None:
             margin[index_cpu] = output["margin"].float().cpu()
             for row_index, value in zip(index.tolist(), batch["sample_id"]):
                 sample_id[row_index] = value
+            for row_index, value in zip(index.tolist(), batch["sample_key"]):
+                sample_key[row_index] = value
             if batch_number % 50 == 0 or batch_number == len(loader):
                 print(f"{args.split}: {batch_number}/{len(loader)} batches", flush=True)
-    if any(not value for value in sample_id):
+    if any(not value for value in sample_id) or any(not value for value in sample_key):
         raise RuntimeError("some samples were not exported")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     cache_path = args.output_dir / f"{args.split}.pt"
     torch.save({
-        "split": args.split, "sample_id": sample_id, "feature": feature, "tcp": tcp,
+        "schema_version": 2, "provenance": provenance,
+        "split": args.split, "sample_id": sample_id, "sample_key": sample_key,
+        "feature": feature, "tcp": tcp,
         "error": error, "target": target, "prediction": prediction, "msp": msp, "margin": margin,
     }, cache_path)
     metadata = {
         "split": args.split, "samples": count, "errors": int(error.sum()),
         "error_rate": float(error.float().mean()), "checkpoint": str(args.checkpoint.resolve()),
-        "checkpoint_sha256": file_sha256(args.checkpoint), "class_map": str(args.class_map.resolve()),
+        "class_map": str(args.class_map.resolve()), **provenance,
         "official_val_used": False, "preprocessing": "Resize(256), CenterCrop(224), ImageNet normalization",
     }
     (args.output_dir / f"{args.split}.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")

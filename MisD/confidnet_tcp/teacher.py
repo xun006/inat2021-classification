@@ -7,6 +7,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
@@ -16,6 +17,8 @@ from torchvision import transforms
 MISD_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MISD_ROOT.parent
 REFERENCE_DIR = PROJECT_ROOT / "PlantCLEF2022"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 if str(REFERENCE_DIR) not in sys.path:
     sys.path.insert(0, str(REFERENCE_DIR))
 import models_vit  # noqa: E402
@@ -99,6 +102,43 @@ class FrozenTeacher(nn.Module):
         }
 
 
+class TimmGlobalEncoder(nn.Module):
+    """C-group timm ViT up to the representation immediately before its head."""
+
+    def __init__(self, model: nn.Module) -> None:
+        super().__init__()
+        self.model = model
+        self.model.head = nn.Identity()
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        tokens = self.model.forward_features(images)
+        return self.model.forward_head(tokens, pre_logits=True)
+
+
+class FrozenTimmTeacher(nn.Module):
+    """Frozen Classifier C model with its LoRA adapter and linear head restored."""
+
+    def __init__(self, model: nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    @torch.no_grad()
+    def forward(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
+        tokens = self.model.forward_features(images)
+        feature = self.model.forward_head(tokens, pre_logits=True)
+        logits = self.model.head(feature)
+        probabilities = logits.softmax(dim=-1)
+        top2_probability, top2_index = probabilities.topk(2, dim=-1)
+        return {
+            "feature": feature,
+            "logits": logits,
+            "probabilities": probabilities,
+            "prediction": top2_index[:, 0],
+            "msp": top2_probability[:, 0],
+            "margin": top2_probability[:, 0] - top2_probability[:, 1],
+        }
+
+
 def _load_classifier(checkpoint_path: Path, class_map_path: Path) -> nn.Module:
     class_map = load_class_map(class_map_path)
     model = models_vit.vit_large_patch16(num_classes=len(class_map), global_pool=True)
@@ -113,9 +153,75 @@ def _load_classifier(checkpoint_path: Path, class_map_path: Path) -> nn.Module:
     return model
 
 
+def _load_classifier_c(checkpoint_path: Path, class_map_path: Path,
+                       classifier_config_path: Path | None) -> nn.Module:
+    if classifier_config_path is None:
+        raise ValueError("--classifier-config is required for teacher-kind=classifier_c")
+    if checkpoint_path.name != "best.pt":
+        raise ValueError("Classifier C teacher must use the validation-selected best.pt")
+    from Classifier.abc_comparison.model import build_model
+    from Classifier.abc_comparison.run import resolve_config
+    from Classifier.run import restore_adapter
+
+    cfg = resolve_config(classifier_config_path, "C")
+    cfg["class_map"] = str(class_map_path.resolve())
+    saved: dict[str, Any] = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    expected = {
+        "group": "C", "tuning_mode": "lora_head", "loss": "ce",
+        "native_confidence": "max_softmax", "seed": 42,
+    }
+    for key, value in expected.items():
+        if cfg.get(key) != value or saved.get("config", {}).get(key) != value:
+            raise ValueError(f"not a valid Classifier C checkpoint: expected {key}={value!r}")
+    changed = {key for key in cfg if cfg[key] != saved["config"].get(key)} - {
+        "train_dir", "val_dir", "class_map", "pretrained", "workers",
+    }
+    if changed:
+        raise ValueError(f"Classifier C checkpoint/config mismatch: {sorted(changed)}")
+    class_map = load_class_map(class_map_path)
+    if class_map != saved.get("mapping"):
+        raise ValueError("class map differs from the Classifier C checkpoint")
+    if saved.get("pretrained_sha256") != file_sha256(Path(cfg["pretrained"])):
+        raise ValueError("Classifier C MAE backbone SHA256 mismatch")
+    model, _ = build_model(cfg)
+    restore_adapter(model, saved)
+    return model
+
+
+def teacher_provenance(checkpoint_path: Path, class_map_path: Path,
+                       teacher_kind: str = "legacy",
+                       classifier_config_path: Path | None = None) -> dict[str, str]:
+    """Content identity used to reject stale targets and mismatched checkpoints."""
+    if teacher_kind not in {"legacy", "classifier_c"}:
+        raise ValueError(f"unsupported teacher kind: {teacher_kind}")
+    result = {
+        "teacher_kind": teacher_kind,
+        "teacher_checkpoint_sha256": file_sha256(checkpoint_path),
+        "class_map_sha256": file_sha256(class_map_path),
+    }
+    if teacher_kind == "classifier_c":
+        if classifier_config_path is None:
+            raise ValueError("classifier_config_path is required for classifier_c")
+    return result
+
+
 def build_models(checkpoint_path: Path = DEFAULT_CHECKPOINT, class_map_path: Path = DEFAULT_CLASS_MAP,
-                 device: str | torch.device = "cpu") -> tuple[FrozenTeacher, ViTGlobalEncoder]:
+                 device: str | torch.device = "cpu", teacher_kind: str = "legacy",
+                 classifier_config_path: Path | None = None) -> tuple[nn.Module, nn.Module]:
     """Build a frozen teacher and a parameter-independent, identically initialized encoder."""
+    if teacher_kind == "classifier_c":
+        classifier_model = _load_classifier_c(
+            checkpoint_path, class_map_path, classifier_config_path
+        )
+        detector_encoder = TimmGlobalEncoder(copy.deepcopy(classifier_model))
+        # Classifier training freezes the MAE base. ConfidNet phase B instead
+        # fine-tunes its independent full encoder, as prescribed by the paper.
+        detector_encoder.requires_grad_(True).to(device)
+        teacher = FrozenTimmTeacher(classifier_model)
+        teacher.requires_grad_(False).eval().to(device)
+        return teacher, detector_encoder
+    if teacher_kind != "legacy":
+        raise ValueError(f"unsupported teacher kind: {teacher_kind}")
     classifier_model = _load_classifier(checkpoint_path, class_map_path)
     teacher_encoder = ViTGlobalEncoder(classifier_model)
     # Deep-copy is deliberate: phase B updates only this detector-specific encoder.

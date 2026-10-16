@@ -15,7 +15,10 @@ from torch.utils.data import DataLoader
 from data import PlantSplit
 from metrics import failure_metrics
 from model import TCPConfidenceHead
-from teacher import DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models, file_sha256
+from teacher import (
+    DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models, file_sha256,
+    teacher_provenance,
+)
 
 
 def arguments() -> argparse.Namespace:
@@ -24,6 +27,9 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--data-root", type=Path, default=MISD_ROOT / "data")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--class-map", type=Path, default=DEFAULT_CLASS_MAP)
+    parser.add_argument("--teacher-kind", choices=("legacy", "classifier_c"), default="legacy")
+    parser.add_argument("--classifier-config", type=Path,
+                        help="Classifier C run config.json; required with classifier_c")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=8)
@@ -41,9 +47,20 @@ def main() -> None:
     payload = torch.load(args.detector_checkpoint, map_location="cpu", weights_only=False)
     if payload.get("phase") not in {"head", "finetune"}:
         raise ValueError("unsupported detector checkpoint")
-    if payload.get("teacher_sha256") != file_sha256(args.checkpoint):
-        raise ValueError("detector checkpoint was trained for a different teacher checkpoint")
-    teacher, detector_encoder = build_models(args.checkpoint, args.class_map, args.device)
+    provenance = teacher_provenance(
+        args.checkpoint, args.class_map, args.teacher_kind, args.classifier_config
+    )
+    saved_provenance = payload.get("teacher_provenance")
+    if saved_provenance is None and args.teacher_kind == "legacy":
+        # Preserve final evaluation of checkpoints created before cache schema v2.
+        if payload.get("teacher_sha256") != provenance["teacher_checkpoint_sha256"]:
+            raise ValueError("legacy detector checkpoint was trained for a different teacher")
+    elif saved_provenance != provenance:
+        raise ValueError("detector checkpoint was trained for a different teacher/class map")
+    teacher, detector_encoder = build_models(
+        args.checkpoint, args.class_map, args.device,
+        args.teacher_kind, args.classifier_config,
+    )
     head = TCPConfidenceHead().to(args.device); head.load_state_dict(payload["head"]); head.eval()
     if payload["phase"] == "finetune":
         detector_encoder.load_state_dict(payload["encoder"]); detector_encoder.eval()
@@ -79,6 +96,7 @@ def main() -> None:
     record = {
         "detector_checkpoint": str(args.detector_checkpoint.resolve()), "detector_phase": payload["phase"],
         "teacher_checkpoint": str(args.checkpoint.resolve()), "teacher_sha256": file_sha256(args.checkpoint),
+        "teacher_provenance": provenance,
         "evaluation_split": "official_val", "official_val_used": True, **metrics,
     }
     (args.output_dir / "metrics.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

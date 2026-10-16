@@ -43,3 +43,33 @@ bash MisD/confidnet_tcp/run_final_eval.sh
 
 The final command writes `predictions.csv` and `metrics.json`, including the
 teacher checksum and an explicit `official_val_used: true` audit marker.
+
+## Classifier C (LoRA + Head, CE) rerun
+
+The controlled Classifier C checkpoint is an adapter checkpoint rather than the
+legacy full-model checkpoint. Use the dedicated script; do not pass `best.pt`
+to the legacy command. It reconstructs the MAE backbone, restores C's LoRA and
+linear head, verifies the checkpoint/config/backbone/class map, and writes to a
+separate namespace:
+
+```bash
+bash MisD/confidnet_tcp/run_train_classifier_c.sh
+```
+
+Default outputs are under
+`MisD/output/confidnet_tcp_classifier_c_seed42/`, including a teacher-specific
+cache and ConfidNet seeds 0, 1, and 2. Existing `MisD/output/confidnet_tcp/`
+results are never overwritten. Override `CLASSIFIER_RUN`, `CLASSIFIER_CONFIG`,
+`TEACHER_CHECKPOINT`, or `OUT` as environment variables when paths differ.
+
+After selecting a detector checkpoint using `detector_calibration`, run the
+held-out split exactly once:
+
+```bash
+DETECTOR_CHECKPOINT=/path/to/selected/checkpoint_best.pth \
+  bash MisD/confidnet_tcp/run_final_eval_classifier_c.sh
+```
+
+Version-2 TCP caches contain teacher and class-map content identities plus the
+ordered relative sample keys. Training rejects stale caches, a different C
+checkpoint, or a changed/reordered dataset instead of silently mixing targets.

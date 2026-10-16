@@ -24,6 +24,7 @@ class PlantSplit(Dataset):
         expected = load_class_map(class_map_path)
         if self.dataset.class_to_idx != expected:
             raise ValueError(f"class mapping mismatch in {root}")
+        self.root = root
         self.split = split
 
     def __len__(self) -> int:
@@ -34,4 +35,9 @@ class PlantSplit(Dataset):
         path, imagefolder_target = self.dataset.samples[index]
         if target != imagefolder_target:
             raise RuntimeError("ImageFolder target mismatch")
-        return {"image": image, "target": target, "index": index, "sample_id": str(Path(path).resolve())}
+        sample_key = Path(path).relative_to(self.root).as_posix()
+        return {"image": image, "target": target, "index": index,
+                "sample_id": str(Path(path).resolve()), "sample_key": sample_key}
+
+    def sample_keys(self) -> list[str]:
+        return [Path(path).relative_to(self.root).as_posix() for path, _ in self.dataset.samples]

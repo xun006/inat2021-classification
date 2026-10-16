@@ -16,7 +16,10 @@ from torch.utils.data import DataLoader, Dataset
 from data import PlantSplit
 from metrics import failure_metrics
 from model import TCPConfidenceHead
-from teacher import DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models, file_sha256
+from teacher import (
+    DEFAULT_CHECKPOINT, DEFAULT_CLASS_MAP, MISD_ROOT, build_models, file_sha256,
+    teacher_provenance,
+)
 
 
 class CachedFeatureDataset(Dataset):
@@ -42,6 +45,9 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--cache-dir", type=Path, default=MISD_ROOT / "output/confidnet_tcp/cache")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--class-map", type=Path, default=DEFAULT_CLASS_MAP)
+    parser.add_argument("--teacher-kind", choices=("legacy", "classifier_c"), default="legacy")
+    parser.add_argument("--classifier-config", type=Path,
+                        help="Classifier C run config.json; required with classifier_c")
     parser.add_argument("--init-checkpoint", type=Path, help="Required for phase=finetune")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=0)
@@ -57,12 +63,26 @@ def set_seed(seed: int) -> None:
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
 
 
-def load_cache(path: Path, split: str) -> dict:
+def load_cache(path: Path, split: str, expected_provenance: dict[str, str]) -> dict:
     # values = torch.load(path, map_location="cpu", weights_only=False)
     values = torch.load(path, map_location="cpu")
     if values.get("split") != split:
         raise ValueError(f"{path} does not contain {split}")
+    if values.get("schema_version") != 2 or values.get("provenance") != expected_provenance:
+        raise ValueError(f"{path} is stale or belongs to a different teacher; regenerate targets")
+    length = len(values.get("tcp", ()))
+    for key in ("feature", "error", "sample_key"):
+        if len(values.get(key, ())) != length:
+            raise ValueError(f"{path} has malformed {key}")
     return values
+
+
+def verify_dataset_cache(dataset: PlantSplit, cache: dict, split: str) -> None:
+    current = dataset.sample_keys()
+    if current != cache["sample_key"]:
+        raise ValueError(
+            f"{split} files/order differ from the TCP cache; regenerate targets before training"
+        )
 
 
 def evaluate_head(head: nn.Module, loader: DataLoader, device: str) -> dict[str, float]:
@@ -92,10 +112,14 @@ def evaluate_model(encoder: nn.Module, head: nn.Module, loader: DataLoader, cach
 
 def save_checkpoint(path: Path, phase: str, encoder: nn.Module | None, head: nn.Module,
                     epoch: int, metrics: dict[str, float], args: argparse.Namespace) -> None:
+    provenance = teacher_provenance(
+        args.checkpoint, args.class_map, args.teacher_kind, args.classifier_config
+    )
     torch.save({
         "phase": phase, "encoder": None if encoder is None else encoder.state_dict(),
         "head": head.state_dict(), "epoch": epoch, "calibration_metrics": metrics,
         "teacher_checkpoint": str(args.checkpoint.resolve()), "teacher_sha256": file_sha256(args.checkpoint),
+        "teacher_provenance": provenance,
         "selection_split": "detector_calibration", "official_val_used": False,
     }, path)
 
@@ -135,12 +159,18 @@ def train_head(args: argparse.Namespace, train_cache: dict, calibration_cache: d
 def train_finetune(args: argparse.Namespace, train_cache: dict, calibration_cache: dict) -> None:
     if args.init_checkpoint is None:
         raise ValueError("--init-checkpoint is required for phase=finetune")
-    teacher, encoder = build_models(args.checkpoint, args.class_map, args.device)
+    teacher, encoder = build_models(
+        args.checkpoint, args.class_map, args.device,
+        args.teacher_kind, args.classifier_config,
+    )
     del teacher  # TCP targets are frozen in cache; retaining teacher wastes GPU memory.
     # initial = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
     initial = torch.load(args.init_checkpoint, map_location="cpu")
     if initial.get("phase") != "head" or initial.get("encoder") is not None:
         raise ValueError("finetune must initialize from a phase=head checkpoint")
+    if initial.get("teacher_provenance") != teacher_provenance(
+            args.checkpoint, args.class_map, args.teacher_kind, args.classifier_config):
+        raise ValueError("phase=head checkpoint belongs to a different teacher")
     head = TCPConfidenceHead().to(args.device); head.load_state_dict(initial["head"])
     # Paper's fine-tuning phase disables dropout. eval() keeps ViT stochastic layers disabled while gradients flow.
     head.set_dropout(0.0); encoder.eval()
@@ -149,6 +179,8 @@ def train_finetune(args: argparse.Namespace, train_cache: dict, calibration_cach
     loss_fn = nn.MSELoss()
     train_set = PlantSplit(args.data_root, "detector_train", args.class_map)
     calibration_set = PlantSplit(args.data_root, "detector_calibration", args.class_map)
+    verify_dataset_cache(train_set, train_cache, "detector_train")
+    verify_dataset_cache(calibration_set, calibration_cache, "detector_calibration")
     train_loader = DataLoader(train_set, batch_size=args.batch_size or 16, shuffle=True, num_workers=args.num_workers,
                               pin_memory=True, persistent_workers=args.num_workers > 0)
     calibration_loader = DataLoader(calibration_set, batch_size=args.batch_size or 16, shuffle=False,
@@ -187,10 +219,18 @@ def main() -> None:
     args = arguments()
     if args.device.startswith("cuda") and not torch.cuda.is_available(): raise RuntimeError("CUDA unavailable")
     set_seed(args.seed); args.output_dir.mkdir(parents=True, exist_ok=True)
-    train_cache = load_cache(args.cache_dir / "detector_train.pt", "detector_train")
-    calibration_cache = load_cache(args.cache_dir / "detector_calibration.pt", "detector_calibration")
+    provenance = teacher_provenance(
+        args.checkpoint, args.class_map, args.teacher_kind, args.classifier_config
+    )
+    train_cache = load_cache(
+        args.cache_dir / "detector_train.pt", "detector_train", provenance
+    )
+    calibration_cache = load_cache(
+        args.cache_dir / "detector_calibration.pt", "detector_calibration", provenance
+    )
     metadata = {"phase": args.phase, "seed": args.seed, "official_val_used": False,
                 "teacher_checkpoint": str(args.checkpoint.resolve()), "teacher_sha256": file_sha256(args.checkpoint),
+                "teacher_provenance": provenance,
                 "train_samples": len(train_cache["tcp"]), "train_errors": int(train_cache["error"].sum()),
                 "calibration_samples": len(calibration_cache["tcp"]), "calibration_errors": int(calibration_cache["error"].sum())}
     (args.output_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
