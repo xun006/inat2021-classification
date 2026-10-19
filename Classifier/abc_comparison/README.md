@@ -79,3 +79,37 @@ python -m Classifier.abc_comparison.compare \
 比较器先严格确认四组 sample_id 及顺序完全相同，再从各自 logits 分批重算 Max-Softmax、Max-Sigmoid、sigmoid(logit margin)；输出 `metrics_by_score.csv` 和 `contrasts.json`。核心分类对比为 D−B、C−A、B−A、D−C，以及交互效应 `(D−B)−(C−A)`。只有一个 seed，因此结果是描述性对比，不能据此声称统计显著。
 
 模型选择和所有调参只使用 classifier_val。阈值在后续 detector_calibration 上确定；official_val 留作最终一次评估。
+
+## A/B/C/D 统一 official_val 评估
+
+四组完成训练后，优先使用统一入口而不是分别手工导出。该入口会先核对四个
+`best.pt` 的 seed、训练协议、训练数据审计、预训练权重 SHA256 和类别映射，随后
+让四组按完全相同的确定性预处理及样本顺序评估。B/D 表中的 L2 会明确记录为实际
+实现 `BCEWithLogitsLoss`（one-vs-rest、batch/classes 全元素 mean），不是 MSE/Brier。
+
+先做不覆盖正式目录的 smoke test：
+
+```bash
+python -m Classifier.evaluate_official_val \
+  --a-run Classifier/outputs/abc_seed42/A \
+  --b-run Classifier/outputs/abc_seed42/B \
+  --c-run Classifier/outputs/abc_seed42/C \
+  --d-run Classifier/outputs/ep20/l2_s42_retry1 \
+  --output Classifier/outputs/official_val_seed42_smoke \
+  --max-samples 64
+```
+
+smoke 成功后换一个新目录执行完整 42,710 张评估：
+
+```bash
+python -m Classifier.evaluate_official_val \
+  --a-run Classifier/outputs/abc_seed42/A \
+  --b-run Classifier/outputs/abc_seed42/B \
+  --c-run Classifier/outputs/abc_seed42/C \
+  --d-run Classifier/outputs/ep20/l2_s42_retry1 \
+  --output Classifier/outputs/official_val_seed42
+```
+
+若 D 的真实成功 run 不是示例中的 `l2_s42_retry1`，必须传真实目录。每组输出
+`<GROUP>_samples.csv`，汇总写入 `summary.json`/`summary.csv`；只有最后出现
+`complete.json` 才表示四组全部成功。输出目录已存在时程序拒绝覆盖。
