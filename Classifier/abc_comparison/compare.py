@@ -1,4 +1,4 @@
-"""Recompute A/B/C/D metrics from exported logits using identical confidence scores."""
+"""Recompute A/B/C/D(/E) metrics from exported logits with identical scores."""
 from __future__ import annotations
 
 import argparse
@@ -16,6 +16,7 @@ SCORES = ("max_softmax", "max_sigmoid", "sigmoid_logit_margin")
 CLASSIFICATION_METRICS = ("top1", "top5", "macro_f1", "head_accuracy",
                           "medium_accuracy", "tail_accuracy")
 FAILURE_METRICS = ("auroc_error", "aupr_error", "fpr_at_95_tpr", "aurc")
+BASE_GROUPS = "ABCD"
 
 
 def read_samples(path: Path):
@@ -90,15 +91,17 @@ def difference(left, right, keys):
 
 def main():
     parser = argparse.ArgumentParser(__doc__)
-    for group in "ABCD":
+    for group in BASE_GROUPS:
         parser.add_argument(f"--{group.lower()}", type=Path, required=True,
                             help=f"Group {group} export directory")
+    parser.add_argument("--e", type=Path, help="Optional group E DoRA export directory")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--chunk-size", type=int, default=256)
     args = parser.parse_args()
     if args.chunk_size <= 0:
         raise ValueError("chunk-size must be positive")
-    exports = {group: getattr(args, group.lower()) for group in "ABCD"}
+    group_order = BASE_GROUPS + ("E" if args.e is not None else "")
+    exports = {group: getattr(args, group.lower()) for group in group_order}
     all_metrics, reference_ids = {}, None
     for group, export in exports.items():
         ids, metrics = evaluate_export(export, reference_ids, args.chunk_size)
@@ -107,7 +110,7 @@ def main():
 
     args.output.mkdir(parents=True, exist_ok=False)
     rows = []
-    for group in "ABCD":
+    for group in group_order:
         for score in SCORES:
             metric = all_metrics[group][score]
             rows.append({"group": group, "score": score,
@@ -118,7 +121,7 @@ def main():
         writer.writerows(rows)
 
     # Classification is score-independent; use one score as the common carrier.
-    cls = {group: all_metrics[group]["max_softmax"] for group in "ABCD"}
+    cls = {group: all_metrics[group]["max_softmax"] for group in group_order}
     contrasts = {
         "D_minus_B_lora_effect_under_l2": difference(cls["D"], cls["B"], CLASSIFICATION_METRICS),
         "C_minus_A_lora_effect_under_ce": difference(cls["C"], cls["A"], CLASSIFICATION_METRICS),
@@ -132,6 +135,13 @@ def main():
             cls["D"][key] - cls["B"][key] - cls["C"][key] + cls["A"][key]
         )
     contrasts["interaction_D_minus_B_minus_C_minus_A"] = interaction
+    if "E" in cls:
+        contrasts["E_minus_D_dora_effect_under_l2"] = difference(
+            cls["E"], cls["D"], CLASSIFICATION_METRICS
+        )
+        contrasts["E_minus_B_dora_head_effect_under_l2"] = difference(
+            cls["E"], cls["B"], CLASSIFICATION_METRICS
+        )
     write_json(args.output / "contrasts.json", contrasts)
     write_json(args.output / "complete.json", {
         "groups": {group: str(path.resolve()) for group, path in exports.items()},

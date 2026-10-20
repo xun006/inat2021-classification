@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from functools import partial
 import torch
 from torch import nn
+import torch.nn.functional as F
 from timm.models.vision_transformer import VisionTransformer
 
 
@@ -38,6 +39,52 @@ class LoRALinear(nn.Module):
 
     def forward(self, x):
         return self.base(x) + self.b(self.a(self.dropout(x))) * self.scale
+
+
+class DoRALinear(nn.Module):
+    """DoRA for a PyTorch Linear layer, with a factored detached weight norm.
+
+    The base weight has shape [out_features, in_features].  Each output row has
+    one trainable magnitude, while LoRA A/B updates its direction.  Computing
+    the row norm from low-rank factors avoids retaining a dense B@A tensor per
+    adapted ViT layer.
+    """
+    def __init__(self, base, rank, alpha, dropout):
+        super().__init__()
+        if not isinstance(base, nn.Linear):
+            raise TypeError(f"DoRALinear requires nn.Linear, found {type(base).__name__}")
+        self.base = base
+        self.base.requires_grad_(False)
+        self.a = nn.Linear(base.in_features, rank, bias=False)
+        self.b = nn.Linear(rank, base.out_features, bias=False)
+        self.dropout = nn.Dropout(dropout)
+        self.scale = alpha / rank
+        nn.init.kaiming_uniform_(self.a.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.b.weight)
+        self.magnitude = nn.Parameter(base.weight.detach().float().norm(dim=1).to(base.weight.dtype))
+
+    def _weight_norm(self):
+        # ||W+sBA||^2 = ||W||^2 + 2s<W,BA> + s^2||BA||^2, row by row.
+        # The DoRA paper recommends detaching this dynamic denominator.
+        with torch.no_grad():
+            weight = self.base.weight.float()
+            a = self.a.weight.float()
+            b = self.b.weight.float()
+            base_squared = weight.square().sum(dim=1)
+            cross = (b * (weight @ a.t())).sum(dim=1)
+            gram = a @ a.t()
+            update_squared = ((b @ gram) * b).sum(dim=1)
+            squared = base_squared + 2 * self.scale * cross + self.scale**2 * update_squared
+            return squared.clamp_min(torch.finfo(squared.dtype).tiny).sqrt()
+
+    def forward(self, x):
+        base_result = F.linear(x, self.base.weight, bias=None)
+        low_rank_result = self.b(self.a(self.dropout(x))) * self.scale
+        norm_scale = (self.magnitude.float() / self._weight_norm()).to(base_result.dtype)
+        result = (base_result + low_rank_result) * norm_scale
+        if self.base.bias is not None:
+            result = result + self.base.bias
+        return result
 
 
 def build_model(cfg, initialize=True):

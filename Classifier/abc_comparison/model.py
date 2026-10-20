@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from timm.models.vision_transformer import VisionTransformer
 
-from Classifier.model import LoRALinear, allow_mae_namespace
+from Classifier.model import DoRALinear, LoRALinear, allow_mae_namespace
 
 
 SIZES = {
@@ -18,7 +18,7 @@ SIZES = {
 
 
 def build_model(cfg: dict, initialize: bool = True):
-    if cfg["tuning_mode"] not in ("head_only", "lora_head"):
+    if cfg["tuning_mode"] not in ("head_only", "lora_head", "dora_head"):
         raise ValueError(f"Unknown tuning_mode: {cfg['tuning_mode']}")
     dim, depth, heads = SIZES[cfg["model"]]
     model = VisionTransformer(
@@ -55,9 +55,10 @@ def build_model(cfg: dict, initialize: bool = True):
     nn.init.zeros_(model.head.bias)
     model.requires_grad_(False)
     targets = []
-    if cfg["tuning_mode"] == "lora_head":
+    if cfg["tuning_mode"] in ("lora_head", "dora_head"):
+        adapter_class = LoRALinear if cfg["tuning_mode"] == "lora_head" else DoRALinear
         for index, block in enumerate(model.blocks):
-            block.attn.qkv = LoRALinear(
+            block.attn.qkv = adapter_class(
                 block.attn.qkv, cfg["rank"], cfg["alpha"], cfg["lora_dropout"]
             )
             targets.append(f"blocks.{index}.attn.qkv")
@@ -70,7 +71,10 @@ def build_model(cfg: dict, initialize: bool = True):
             raise RuntimeError(f"Head-only freeze invariant failed: {trainable_names[:10]}")
     else:
         if not targets or not any(".a.weight" in name for name in trainable_names):
-            raise RuntimeError("LoRA parameters were not made trainable")
+            raise RuntimeError("Adapter parameters were not made trainable")
+        has_magnitude = any(name.endswith(".magnitude") for name in trainable_names)
+        if has_magnitude != (cfg["tuning_mode"] == "dora_head"):
+            raise RuntimeError("DoRA magnitude parameter invariant failed")
 
     report.update(
         tuning_mode=cfg["tuning_mode"],

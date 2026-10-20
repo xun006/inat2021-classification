@@ -1,4 +1,4 @@
-"""Train/export controlled groups A, B, and C with seed fixed to 42.
+"""Train/export controlled groups A, B, C, and E with seed fixed to 42.
 
 Run from repository root, for example:
 python -m Classifier.abc_comparison.run train --group A --output Classifier/outputs/abc_seed42/A
@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Subset
 
 from Classifier.abc_comparison.model import build_model
 from Classifier.data import Images, audit, load_mapping
@@ -32,6 +33,7 @@ GROUPS = {
     "A": {"tuning_mode": "head_only", "loss": "ce", "native_confidence": "max_softmax"},
     "B": {"tuning_mode": "head_only", "loss": "l2", "native_confidence": "max_sigmoid"},
     "C": {"tuning_mode": "lora_head", "loss": "ce", "native_confidence": "max_softmax"},
+    "E": {"tuning_mode": "dora_head", "loss": "l2", "native_confidence": "max_sigmoid"},
 }
 FAILURE_KEYS = (
     "auroc_error", "aupr_error", "fpr_at_95_tpr", "aurc",
@@ -49,7 +51,7 @@ def resolve_config(path: Path, group: str) -> dict:
 
 def validate_config(cfg: dict) -> None:
     if cfg["group"] not in GROUPS or cfg["seed"] != 42:
-        raise ValueError("This protocol supports only groups A/B/C with seed=42")
+        raise ValueError("This protocol supports only groups A/B/C/E with seed=42")
     if any(cfg[key] <= 0 for key in ("epochs", "batch_size", "image_size", "num_classes")):
         raise ValueError("epochs, batch_size, image_size and num_classes must be positive")
     if cfg["epochs"] != 20 or cfg["batch_size"] != 32 or cfg["lr_warmup"] != 2:
@@ -86,21 +88,22 @@ def make_optimizer(model, cfg):
                   if parameter.requires_grad and id(parameter) not in head_ids]
     if cfg["tuning_mode"] == "head_only" and adaptation:
         raise RuntimeError("Head-only group contains trainable backbone parameters")
-    if cfg["tuning_mode"] == "lora_head":
+    if cfg["tuning_mode"] in ("lora_head", "dora_head"):
         if not adaptation:
-            raise RuntimeError("LoRA group has no trainable adaptation parameters")
+            raise RuntimeError("Adapted group has no trainable adaptation parameters")
         groups.append({"params": adaptation, "lr": cfg["lr"], "initial_lr": cfg["lr"],
-                       "name": "lora"})
+                       "name": cfg["tuning_mode"][:-5]})
     groups.append({"params": list(model.head.parameters()), "lr": cfg["head_lr"],
                    "initial_lr": cfg["head_lr"], "name": "head"})
     return torch.optim.AdamW(groups, weight_decay=cfg["weight_decay"])
 
 
-def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, output):
+def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, output, max_batches=None):
     model.train()  # Matches the existing D implementation exactly.
     batches = loader(dataset, cfg, shuffle=True, epoch=epoch)
     totals = {"loss": 0.0, "ce": 0.0, "l2": 0.0, "correct": 0, "samples": 0}
     skipped_steps = consecutive_skips = 0
+    processed_steps = 0
     for step, (images, labels, _) in enumerate(batches):
         progress = epoch + (step + 1) / len(batches)
         factor = learning_rate_factor(cfg, progress)
@@ -143,15 +146,19 @@ def train_epoch(model, dataset, optimizer, scaler, device, cfg, epoch, output):
         totals["l2"] += l2.item() * n
         totals["correct"] += int(logits.argmax(1).eq(labels).sum())
         totals["samples"] += n
+        processed_steps += 1
         if step % 50 == 0:
             print(f"group {cfg['group']} epoch {epoch+1} step {step}/{len(batches)} "
                   f"loss={selected.item():.5f}", flush=True)
-    if skipped_steps == len(batches):
+        if max_batches is not None and processed_steps >= max_batches:
+            break
+    if skipped_steps == processed_steps:
         raise FloatingPointError("No successful optimizer updates in this epoch")
     return {
         **{key: totals[key] / totals["samples"] for key in ("loss", "ce", "l2", "correct")},
         "amp_skipped_steps": skipped_steps,
-        "optimizer_steps": len(batches) - skipped_steps,
+        "optimizer_steps": processed_steps - skipped_steps,
+        "processed_steps": processed_steps,
         "amp_scale": scaler.get_scale(),
     }
 
@@ -267,7 +274,7 @@ def evaluate(model, dataset, cfg, device, counts, export=None):
 
 def main():
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("mode", choices=("train", "export"))
+    parser.add_argument("mode", choices=("train", "export", "smoke"))
     parser.add_argument("--group", required=True, choices=tuple(GROUPS))
     parser.add_argument("--config", type=Path,
                         default=Path("Classifier/abc_comparison/config.json"))
@@ -275,7 +282,13 @@ def main():
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--split-dir", type=Path)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--smoke-batches", type=int, default=2,
+                        help="Smoke only: number of real train and validation batches")
     args = parser.parse_args()
+    if args.smoke_batches <= 0:
+        parser.error("--smoke-batches must be positive")
+    if args.mode == "smoke" and (args.group != "E" or args.checkpoint is not None):
+        parser.error("smoke is only for a fresh group E model and does not accept --checkpoint")
     if int(os.environ.get("WORLD_SIZE", "1")) != 1:
         raise ValueError("Use one process/GPU per experiment")
     cfg = resolve_config(args.config, args.group)
@@ -365,6 +378,26 @@ def main():
             "torch": torch.__version__, "torchvision": torchvision.__version__,
             "timm": timm.__version__, "git_revision": revision,
         })
+
+    if args.mode == "smoke":
+        train_metrics = train_epoch(
+            model, train, optimizer, scaler, device, cfg, 0, args.output,
+            max_batches=args.smoke_batches,
+        )
+        validation_rows = min(len(val), cfg["batch_size"] * args.smoke_batches)
+        validation_subset = Subset(val, range(validation_rows))
+        val_metrics = evaluate(
+            model, validation_subset, cfg, device, stats["train_counts"]
+        )
+        smoke = {
+            "status": "complete", "formal_checkpoint_created": False,
+            "group": "E", "seed": cfg["seed"], "train": train_metrics,
+            "validation": val_metrics, "validation_samples": validation_rows,
+            "note": "Infrastructure smoke only; not a formal experiment result",
+        }
+        write_json(args.output / "smoke.json", smoke)
+        print(json.dumps(smoke, indent=2))
+        return
 
     for epoch in range(start, cfg["epochs"]):
         train_metrics = train_epoch(

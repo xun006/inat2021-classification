@@ -1,4 +1,4 @@
-"""Evaluate the frozen A/B/C/D classifiers on exactly the same official_val rows.
+"""Evaluate the frozen A/B/C/D(/E) classifiers on the same official_val rows.
 
 This is intentionally an evaluation-only entry point.  It never constructs a
 training loader and never modifies checkpoints.
@@ -29,6 +29,7 @@ GROUPS = {
     "B": {"tuning_mode": "head_only", "loss": "l2", "confidence": "max_sigmoid"},
     "C": {"tuning_mode": "lora_head", "loss": "ce", "confidence": "max_softmax"},
     "D": {"tuning_mode": "lora_head", "loss": "l2", "confidence": "max_sigmoid"},
+    "E": {"tuning_mode": "dora_head", "loss": "l2", "confidence": "max_sigmoid"},
 }
 PROTOCOL_KEYS = (
     "model", "global_pool", "image_size", "num_classes", "rank", "alpha",
@@ -211,9 +212,11 @@ def evaluate_group(run: dict, dataset, mapping: dict[str, int], pretrained: Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    for group in GROUPS:
+    for group in "ABCD":
         parser.add_argument(f"--{group.lower()}-run", type=Path, required=True,
                             help=f"Group {group} run directory containing config.json and best.pt")
+    parser.add_argument("--e-run", type=Path,
+                        help="Optional group E DoRA run containing config.json and best.pt")
     parser.add_argument("--official-val", type=Path,
                         default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/data/official_val"))
     parser.add_argument("--class-map", type=Path,
@@ -237,7 +240,8 @@ def main() -> None:
         raise FileExistsError(f"Refusing to overwrite output: {args.output}")
     if args.batch_size <= 0 or args.workers < 0:
         raise ValueError("batch-size must be positive and workers non-negative")
-    runs = [load_run(group, getattr(args, f"{group.lower()}_run")) for group in GROUPS]
+    group_order = list("ABCD") + (["E"] if args.e_run is not None else [])
+    runs = [load_run(group, getattr(args, f"{group.lower()}_run")) for group in group_order]
     num_classes = runs[0]["config"]["num_classes"]
     mapping = load_mapping(args.class_map, num_classes)
     validate_runs(runs, mapping, args.pretrained)
@@ -268,7 +272,7 @@ def main() -> None:
     }
     write_json(args.output / "summary.json", summary)
     write_json(args.output / "complete.json", {
-        "status": "complete", "groups": list(GROUPS), "rows_per_group": len(evaluation_dataset),
+        "status": "complete", "groups": group_order, "rows_per_group": len(evaluation_dataset),
         "official_val_fingerprint": audit["ordered_sample_fingerprint"],
     })
     print(json.dumps(summary, indent=2, ensure_ascii=False))
