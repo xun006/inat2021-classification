@@ -67,7 +67,7 @@ def validate_checkpoint_config(cfg: dict, saved: dict, checkpoint: Path) -> None
     for key, value in expected.items():
         if cfg.get(key) != value or saved.get("config", {}).get(key) != value:
             raise ValueError(f"Not a valid C-group checkpoint: expected {key}={value!r}")
-    changed = {key for key in cfg if cfg[key] != saved["config"].get(key)} - {
+    changed = {key for key in saved["config"] if cfg.get(key) != saved["config"].get(key)} - {
         "train_dir", "val_dir", "class_map", "pretrained", "workers"
     }
     if changed:
@@ -298,10 +298,10 @@ def plot_curves(
 def main() -> None:
     # Keep model/dataset imports local so the metric unit tests do not require
     # timm or torchvision merely to validate the numerical definitions.
-    from Classifier.abc_comparison.model import build_model
-    from Classifier.abc_comparison.run import resolve_config
+    from Classifier.checkpoint import load as load_checkpoint, restore_model
     from Classifier.data import Images, load_mapping
-    from Classifier.run import loader, restore_adapter, seed_all, sha256, write_json
+    from Classifier.engine import loader, resolve_config, seed_all, sha256, write_json
+    from Classifier.model import build_model
 
     args = parse_args()
     if args.output_dir.exists():
@@ -317,14 +317,17 @@ def main() -> None:
         cfg["workers"] = args.workers
 
     # Checkpoints contain Python RNG objects and therefore require trusted pickle loading.
-    saved = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    saved = load_checkpoint(args.checkpoint)
     validate_checkpoint_config(cfg, saved, args.checkpoint)
     best_selection = verify_best_selection(args.checkpoint, saved)
     mapping = load_mapping(cfg)
     if mapping != saved["mapping"]:
         raise ValueError("Class mapping differs from the C checkpoint")
     backbone_sha256 = sha256(cfg["pretrained"])
-    if backbone_sha256 != saved["pretrained_sha256"]:
+    recorded_hash = saved.get("pretrained_sha256")
+    if recorded_hash is None:
+        recorded_hash = saved.get("initialization_id", "").split(":", 1)[-1]
+    if backbone_sha256 != recorded_hash:
         raise ValueError("PlantCLEF backbone SHA256 differs from the C checkpoint")
 
     device = torch.device(args.device)
@@ -332,7 +335,7 @@ def main() -> None:
         raise RuntimeError("CUDA was requested but is not available")
     seed_all(cfg["seed"])
     model, _ = build_model(cfg)
-    restore_adapter(model, saved)
+    restore_model(model, saved)
     model.to(device).eval()
     dataset = Images(args.split_dir, mapping, cfg["image_size"])
 

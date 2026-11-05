@@ -159,13 +159,13 @@ def _load_classifier_c(checkpoint_path: Path, class_map_path: Path,
         raise ValueError("--classifier-config is required for teacher-kind=classifier_c")
     if checkpoint_path.name != "best.pt":
         raise ValueError("Classifier C teacher must use the validation-selected best.pt")
-    from Classifier.abc_comparison.model import build_model
-    from Classifier.abc_comparison.run import resolve_config
-    from Classifier.run import restore_adapter
+    from Classifier.checkpoint import load as load_checkpoint, restore_model
+    from Classifier.engine import resolve_config
+    from Classifier.model import build_model
 
     cfg = resolve_config(classifier_config_path, "C")
     cfg["class_map"] = str(class_map_path.resolve())
-    saved: dict[str, Any] = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    saved: dict[str, Any] = load_checkpoint(checkpoint_path)
     expected = {
         "group": "C", "tuning_mode": "lora_head", "loss": "ce",
         "native_confidence": "max_softmax", "seed": 42,
@@ -173,7 +173,7 @@ def _load_classifier_c(checkpoint_path: Path, class_map_path: Path,
     for key, value in expected.items():
         if cfg.get(key) != value or saved.get("config", {}).get(key) != value:
             raise ValueError(f"not a valid Classifier C checkpoint: expected {key}={value!r}")
-    changed = {key for key in cfg if cfg[key] != saved["config"].get(key)} - {
+    changed = {key for key in saved["config"] if cfg.get(key) != saved["config"].get(key)} - {
         "train_dir", "val_dir", "class_map", "pretrained", "workers",
     }
     if changed:
@@ -181,10 +181,13 @@ def _load_classifier_c(checkpoint_path: Path, class_map_path: Path,
     class_map = load_class_map(class_map_path)
     if class_map != saved.get("mapping"):
         raise ValueError("class map differs from the Classifier C checkpoint")
-    if saved.get("pretrained_sha256") != file_sha256(Path(cfg["pretrained"])):
+    recorded_hash = saved.get("pretrained_sha256")
+    if recorded_hash is None:
+        recorded_hash = saved.get("initialization_id", "").split(":", 1)[-1]
+    if recorded_hash != file_sha256(Path(cfg["pretrained"])):
         raise ValueError("Classifier C MAE backbone SHA256 mismatch")
     model, _ = build_model(cfg)
-    restore_adapter(model, saved)
+    restore_model(model, saved)
     return model
 
 

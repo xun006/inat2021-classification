@@ -1,1 +1,1 @@
-"""Stage-one PlantCLEF classifier experiments."""
+"""Unified A/B/C/D/G/H/I classifier experiments."""

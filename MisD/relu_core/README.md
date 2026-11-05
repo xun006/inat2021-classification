@@ -59,7 +59,7 @@ bash /mnt/hdd8t/Mingle/xyyy/MisD/relu_core/run_development.sh
 
 ```bash
 ROOT=/mnt/hdd8t/Mingle/xyyy \
-CLASSIFIER_RUN=/mnt/hdd8t/Mingle/xyyy/Classifier/outputs/abc_seed42/C \
+CLASSIFIER_RUN=/mnt/hdd8t/Mingle/xyyy/Classifier/outputs/C/seed_42 \
 OUT=/mnt/hdd8t/Mingle/xyyy/MisD/output/relu_core_classifier_c_seed42 \
 bash /mnt/hdd8t/Mingle/xyyy/MisD/relu_core/run_development.sh
 ```

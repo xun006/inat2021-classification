@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT=${ROOT:-/mnt/hdd8t/Mingle/xyyy}
 CODE="$ROOT/MisD/confidnet_tcp"
-CLASSIFIER_RUN=${CLASSIFIER_RUN:-$ROOT/Classifier/outputs/abc_seed42/C}
+CLASSIFIER_RUN=${CLASSIFIER_RUN:-$ROOT/Classifier/outputs/C/seed_42}
 CLASSIFIER_CONFIG=${CLASSIFIER_CONFIG:-$CLASSIFIER_RUN/config.json}
 TEACHER_CHECKPOINT=${TEACHER_CHECKPOINT:-$CLASSIFIER_RUN/best.pt}
 OUT=${OUT:-$ROOT/MisD/output/confidnet_tcp_classifier_c_seed42}

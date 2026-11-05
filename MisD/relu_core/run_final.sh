@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT=${ROOT:-/mnt/hdd8t/Mingle/xyyy}
 CODE="$ROOT/MisD/relu_core"
-CLASSIFIER_RUN=${CLASSIFIER_RUN:-$ROOT/Classifier/outputs/abc_seed42/C}
+CLASSIFIER_RUN=${CLASSIFIER_RUN:-$ROOT/Classifier/outputs/C/seed_42}
 CLASSIFIER_CONFIG=${CLASSIFIER_CONFIG:-$CLASSIFIER_RUN/config.json}
 TEACHER_CHECKPOINT=${TEACHER_CHECKPOINT:-$CLASSIFIER_RUN/best.pt}
 CLASS_MAP=${CLASS_MAP:-$ROOT/MisD/data/class_to_idx.json}
