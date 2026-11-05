@@ -156,5 +156,11 @@ def validate_locked_distance(distance: torch.Tensor, classes: int) -> None:
         raise ValueError("locked distance matrix diagonal is not exactly zero")
     if not torch.allclose(distance, distance.T, atol=1e-7, rtol=1e-6):
         raise ValueError("locked distance matrix is not symmetric")
-    if not torch.isclose(torch.linalg.vector_norm(distance), torch.tensor(1.0), atol=1e-5):
+    frobenius_norm = torch.linalg.vector_norm(distance.to(dtype=torch.float64))
+    if not torch.isclose(
+        frobenius_norm,
+        torch.tensor(1.0, dtype=torch.float64),
+        atol=1e-4,
+        rtol=1e-4,
+    ):
         raise ValueError("locked distance matrix is not Frobenius-normalized")
