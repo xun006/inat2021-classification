@@ -75,8 +75,8 @@ OSCR = D组准确率 × AUROC
 cd /mnt/hdd8t/Mingle/xyyy
 
 python -m baselines.d_group_training_free_baselines \
-  --config Classifier/outputs/ep20/l2_s42_retry1/config.json \
-  --checkpoint Classifier/outputs/ep20/l2_s42_retry1/best.pt \
+  --config Classifier/outputs/D/seed_42/config.json \
+  --checkpoint Classifier/outputs/D/seed_42/best.pt \
   --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
   --output-dir /mnt/hdd8t/Mingle/xyyy/baselines/outputs/d_group/official_val \
   --device cuda
@@ -88,9 +88,9 @@ python -m baselines.d_group_training_free_baselines \
 
 ```bash
 python -m baselines.d_group_training_free_baselines \
-  --config Classifier/outputs/ep20/l2_s42_retry1/config.json \
-  --checkpoint Classifier/outputs/ep20/l2_s42_retry1/best.pt \
-  --pretrained /mnt/hdd8t/Mingle/xyyy/models/misclassification-aware/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
+  --config Classifier/outputs/D/seed_42/config.json \
+  --checkpoint Classifier/outputs/D/seed_42/best.pt \
+  --pretrained /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
   --class-map /mnt/hdd8t/Mingle/xyyy/MisD/data/class_to_idx.json \
   --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
   --output-dir /mnt/hdd8t/Mingle/xyyy/baselines/outputs/d_group/official_val \

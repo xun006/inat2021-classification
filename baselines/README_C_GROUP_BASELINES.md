@@ -37,6 +37,7 @@ Probability Margin 与 Raw-logit Margin 不是同一个量，必须分别报告�
 | FPR@95TPR | ↓ | 错误检出率 TPR=95% 时，正确样本被误报为错误的比例；采用 ROC 曲线线性插值。 |
 | AURC | ↓ | 按从安全到危险的顺序逐步接受样本，计算 Risk–Coverage 曲线面积；同分样本采用随机排列的期望风险，避免文件顺序造成偏差。 |
 | OSCR | ↑ | 本实验的**闭集错分适配版**：横轴是错误预测被错误接受的比例，纵轴是“正确且被接受”的样本占全部测试样本的比例，报告曲线面积。 |
+| OSCR_MD | ↑ | 新增错分 OSCR：枚举全部样本出现过的唯一接受置信度，在每个阈值计算 EAR 和 MCCR，并对 EAR–MCCR 曲线进行梯形积分。旧 `OSCR` 保留且不覆盖。 |
 
 ### OSCR 的必要限定
 
@@ -50,14 +51,38 @@ OSCR = C 组测试准确率 × 错分检测 AUROC
 
 所以在固定 C 组分类器、只比较七种分数时，OSCR 与 AUROC 给出相同的方法排序；它不是独立的错分排序证据。如果后续加入真正 OOD 数据，应另写标准 open-set OSCR 实验，不能与本表混合。
 
+### 新增错分指标 OSCR_MD
+
+`OSCR_MD` 与旧 `OSCR` 分列保存。对于每种基线，先把“越大越可能错误”的
+`error_score` 转换为“越大越应接受”的置信度 `confidence = -error_score`。然后将
+全部样本出现过的唯一置信度从高到低作为阈值；同一置信度的样本必须在同一步
+跨过阈值，不能按文件顺序逐个处理。每个阈值计算：
+
+```text
+EAR  = 被接受的错误预测数 / 全部错误预测数
+MCCR = 被接受且分类正确的样本数 / 全部测试样本数
+```
+
+曲线以 EAR 为横轴、MCCR 为纵轴，并显式加入拒绝全部预测的起点 `(0, 0)`。
+最后使用梯形法计算面积：
+
+```text
+OSCR_MD = sum((EAR[j] - EAR[j-1]) * (MCCR[j] + MCCR[j-1]) / 2)
+```
+
+`oscr_md_curve.csv` 保存每种方法的全部唯一阈值、EAR 和 MCCR，
+`oscr_md_curve.png` 保存对应曲线。由于当前旧 `OSCR` 也采用等价的阈值分组与
+积分规则，两列数值可能一致；保留两列是为了维持旧结果兼容，并明确新增指标的
+命名、坐标和计算协议。
+
 ## 4. 服务器运行方法
 
 必须从仓库根目录运行。下面以最终测试集 `official_val` 为例：
 
 ```bash
 python -m baselines.c_group_training_free_baselines \
-  --config Classifier/outputs/abc_seed42/C/config.json \
-  --checkpoint Classifier/outputs/abc_seed42/C/best.pt \
+  --config Classifier/outputs/C/seed_42/config.json \
+  --checkpoint Classifier/outputs/C/seed_42/best.pt \
   --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
   --output-dir baselines/outputs/c_group/official_val \
   --device cuda
@@ -67,9 +92,9 @@ python -m baselines.c_group_training_free_baselines \
 
 ```bash
 python -m baselines.c_group_training_free_baselines \
-  --config Classifier/outputs/abc_seed42/C/config.json \
-  --checkpoint Classifier/outputs/abc_seed42/C/best.pt \
-  --pretrained /mnt/hdd8t/Mingle/xyyy/models/misclassification-aware/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
+  --config Classifier/outputs/C/seed_42/config.json \
+  --checkpoint Classifier/outputs/C/seed_42/best.pt \
+  --pretrained /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
   --class-map /mnt/hdd8t/Mingle/xyyy/MisD/data/class_to_idx.json \
   --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
   --output-dir baselines/outputs/c_group/official_val \
@@ -102,14 +127,17 @@ baselines/outputs/c_group/official_val/
 ├── risk_coverage.png
 ├── oscr_curve.csv
 ├── oscr_curve.png
+├── oscr_md_curve.csv
+├── oscr_md_curve.png
 └── run_info.json
 ```
 
-- `metrics.csv`：机器可读的主结果表，列顺序固定为 method、AUROC、Error AUPRC、FPR@95TPR、AURC、OSCR。
+- `metrics.csv`：机器可读的主结果表，列顺序固定为 method、AUROC、Error AUPRC、FPR@95TPR、AURC、OSCR、OSCR_MD。
 - `metrics.md`：与 CSV 数值一致、保留六位小数的论文检查表。
 - `sample_scores.csv`：逐样本标签、预测、错误标记和七个原始错分分数，用于复核与 bootstrap。
 - `risk_coverage.csv/png`：七种方法的 Risk–Coverage 数据与图。
 - `oscr_curve.csv/png`：闭集 OSCR 适配曲线；坐标名称不会伪装成标准 OOD OSCR。
+- `oscr_md_curve.csv/png`：新增错分 OSCR 曲线；CSV 明确保存唯一置信度阈值、EAR 和 MCCR。
 - `run_info.json`：样本数、错误率、checkpoint/backbone SHA256、epoch、路径、Git revision、公式与评价定义。
 
 ## 6. 科研使用约束
@@ -128,7 +156,9 @@ baselines/outputs/c_group/official_val/
 python -m unittest baselines.test_c_group_training_free_baselines -v
 ```
 
-测试覆盖分数公式与方向、完美错误排序、AURC 同分处理、以及闭集 OSCR 与 `accuracy × AUROC` 的一致性。
+测试覆盖分数公式与方向、完美错误排序、AURC 同分处理、闭集 OSCR 与
+`accuracy × AUROC` 的一致性，以及 OSCR_MD 的唯一阈值枚举、EAR/MCCR、梯形
+积分和同分排列不变性。
 
 ## 8. 方法依据
 

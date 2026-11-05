@@ -9,7 +9,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
 python /mnt/hdd8t/Mingle/xyyy/MisD/train_vit_classifier_head.py \
   --data-path /mnt/hdd8t/Mingle/xyyy/MisD/data/classifier \
   --class-map /mnt/hdd8t/Mingle/xyyy/MisD/data/class_to_idx.json \
-  --pretrained /mnt/hdd8t/Mingle/xyyy/models/misclassification-aware/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
+  --pretrained /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
   --output-dir /mnt/hdd8t/Mingle/xyyy/MisD/output/vit_large_linear_probe_4271 \
   --num-classes 4271 \
   --epochs 25 \

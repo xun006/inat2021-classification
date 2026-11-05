@@ -12,6 +12,7 @@ from baselines.c_group_training_free_baselines import (
     METHODS,
     closed_set_oscr_curve,
     evaluate_scores,
+    misclassification_oscr_md_curve,
     risk_coverage_curve,
     score_tensors,
     verify_best_selection,
@@ -41,12 +42,13 @@ class CGroupBaselineTests(unittest.TestCase):
         errors = np.asarray([0, 0, 1, 1])
         values = np.asarray([0.0, 0.1, 0.9, 1.0])
         scores = OrderedDict((method, values.copy()) for method in METHODS)
-        rows, _, _ = evaluate_scores(errors, scores)
+        rows, _, _, _ = evaluate_scores(errors, scores)
         for row in rows:
             self.assertAlmostEqual(row["auroc"], 1.0)
             self.assertAlmostEqual(row["error_auprc"], 1.0)
             self.assertAlmostEqual(row["fpr_at_95_tpr"], 0.0)
             self.assertAlmostEqual(row["oscr"], 0.5)
+            self.assertAlmostEqual(row["oscr_md"], 0.5)
 
     def test_tie_aware_aurc_is_permutation_invariant(self):
         errors_a = np.asarray([0, 1, 0, 1])
@@ -63,6 +65,33 @@ class CGroupBaselineTests(unittest.TestCase):
         _, _, oscr = closed_set_oscr_curve(errors, scores)
         accuracy = float((errors == 0).mean())
         self.assertAlmostEqual(oscr, accuracy * roc_auc_score(errors, scores))
+
+    def test_oscr_md_uses_all_unique_confidence_thresholds(self):
+        errors = np.asarray([0, 1, 0, 1, 0])
+        error_scores = np.asarray([0.1, 0.8, 0.1, 0.7, 0.2])
+        thresholds, ear, mccr, oscr_md = misclassification_oscr_md_curve(
+            errors, error_scores
+        )
+
+        # Four unique confidence values plus the reject-all point at +infinity.
+        self.assertEqual(len(thresholds), 5)
+        self.assertTrue(np.isposinf(thresholds[0]))
+        np.testing.assert_allclose(thresholds[1:], [-0.1, -0.2, -0.7, -0.8])
+        np.testing.assert_allclose(ear, [0.0, 0.0, 0.0, 0.5, 1.0])
+        np.testing.assert_allclose(mccr, [0.0, 0.4, 0.6, 0.6, 0.6])
+        self.assertAlmostEqual(oscr_md, 0.6)
+
+    def test_oscr_md_ties_are_permutation_invariant(self):
+        scores = np.asarray([0.2, 0.2, 0.8, 0.8])
+        _, ear_a, mccr_a, area_a = misclassification_oscr_md_curve(
+            np.asarray([0, 1, 0, 1]), scores
+        )
+        _, ear_b, mccr_b, area_b = misclassification_oscr_md_curve(
+            np.asarray([1, 0, 1, 0]), scores
+        )
+        np.testing.assert_allclose(ear_a, ear_b)
+        np.testing.assert_allclose(mccr_a, mccr_b)
+        self.assertAlmostEqual(area_a, area_b)
 
     def test_best_checkpoint_history_audit_uses_earliest_tie(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:

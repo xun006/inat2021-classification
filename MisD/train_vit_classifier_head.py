@@ -40,7 +40,7 @@ DEFAULT_DATA = HERE / "data" / "classifier"
 DEFAULT_MAPPING = HERE / "data" / "class_to_idx.json"
 DEFAULT_PRETRAINED = (
     PROJECT_ROOT
-    / "models/misclassification-aware/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth"
+    / "models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth"
 )
 DEFAULT_OUTPUT = HERE / "output" / "vit_large_linear_probe_4271"
 

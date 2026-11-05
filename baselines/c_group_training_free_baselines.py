@@ -182,16 +182,68 @@ def closed_set_oscr_curve(
     return fpr_array, ccr_array, float(area)
 
 
+def misclassification_oscr_md_curve(
+    errors: np.ndarray, error_scores: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """OSCR_MD over every unique sample confidence threshold.
+
+    The exported baseline scores are error-oriented, so acceptance confidence is
+    their negation. At each unique confidence value, all tied samples cross the
+    threshold together. EAR is the fraction of wrong predictions accepted and
+    MCCR is the fraction of all samples that are both correct and accepted.
+    """
+    errors = np.asarray(errors, dtype=np.int64)
+    error_scores = np.asarray(error_scores, dtype=np.float64)
+    if errors.ndim != 1 or error_scores.shape != errors.shape:
+        raise ValueError("OSCR_MD requires equally shaped one-dimensional arrays")
+    if not np.isfinite(error_scores).all():
+        raise ValueError("OSCR_MD scores must be finite")
+
+    total_wrong = int(errors.sum())
+    total_correct = int(len(errors) - total_wrong)
+    if total_wrong == 0 or total_correct == 0:
+        raise ValueError("OSCR_MD requires correct and wrong predictions")
+
+    confidence = -error_scores
+    order = np.argsort(-confidence, kind="stable")
+    sorted_confidence = confidence[order]
+    sorted_errors = errors[order].astype(bool)
+    group_ends = np.r_[np.flatnonzero(np.diff(sorted_confidence)) + 1, len(errors)]
+
+    thresholds = [np.inf]
+    ear = [0.0]
+    mccr = [0.0]
+    accepted_wrong = 0
+    accepted_correct = 0
+    start = 0
+    for end in group_ends:
+        group = sorted_errors[start:end]
+        accepted_wrong += int(group.sum())
+        accepted_correct += int((~group).sum())
+        thresholds.append(float(sorted_confidence[end - 1]))
+        ear.append(accepted_wrong / total_wrong)
+        mccr.append(accepted_correct / len(errors))
+        start = end
+
+    threshold_array = np.asarray(thresholds, dtype=np.float64)
+    ear_array = np.asarray(ear, dtype=np.float64)
+    mccr_array = np.asarray(mccr, dtype=np.float64)
+    area = np.sum(np.diff(ear_array) * (mccr_array[:-1] + mccr_array[1:]) * 0.5)
+    return threshold_array, ear_array, mccr_array, float(area)
+
+
 def evaluate_scores(
     errors: np.ndarray, score_arrays: OrderedDict[str, np.ndarray]
 ) -> tuple[list[dict[str, float | str]], dict[str, tuple[np.ndarray, np.ndarray]],
-           dict[str, tuple[np.ndarray, np.ndarray]]]:
+           dict[str, tuple[np.ndarray, np.ndarray]],
+           dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     errors = np.asarray(errors, dtype=np.int64)
     if errors.ndim != 1 or len(errors) == 0 or set(np.unique(errors)) != {0, 1}:
         raise ValueError("Evaluation requires a non-empty error vector containing both 0 and 1")
     rows = []
     risk_curves = {}
     oscr_curves = {}
+    oscr_md_curves = {}
     for method in METHODS:
         scores = np.asarray(score_arrays[method], dtype=np.float64)
         if scores.shape != errors.shape or not np.isfinite(scores).all():
@@ -199,6 +251,9 @@ def evaluate_scores(
         fpr, tpr, _ = roc_curve(errors, scores)
         coverage, risk, aurc = risk_coverage_curve(errors, scores)
         oscr_fpr, ccr, oscr = closed_set_oscr_curve(errors, scores)
+        oscr_md_thresholds, ear, mccr, oscr_md = misclassification_oscr_md_curve(
+            errors, scores
+        )
         rows.append({
             "method": method,
             "auroc": float(roc_auc_score(errors, scores)),
@@ -206,14 +261,18 @@ def evaluate_scores(
             "fpr_at_95_tpr": float(np.interp(0.95, tpr, fpr)),
             "aurc": aurc,
             "oscr": oscr,
+            "oscr_md": oscr_md,
         })
         risk_curves[method] = (coverage, risk)
         oscr_curves[method] = (oscr_fpr, ccr)
-    return rows, risk_curves, oscr_curves
+        oscr_md_curves[method] = (oscr_md_thresholds, ear, mccr)
+    return rows, risk_curves, oscr_curves, oscr_md_curves
 
 
 def write_metrics(path: Path, rows: list[dict[str, float | str]]) -> None:
-    fields = ["method", "auroc", "error_auprc", "fpr_at_95_tpr", "aurc", "oscr"]
+    fields = [
+        "method", "auroc", "error_auprc", "fpr_at_95_tpr", "aurc", "oscr", "oscr_md"
+    ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -222,12 +281,12 @@ def write_metrics(path: Path, rows: list[dict[str, float | str]]) -> None:
 
 def write_markdown(path: Path, rows: list[dict[str, float | str]]) -> None:
     lines = [
-        "| Method | AUROC ↑ | Error AUPRC ↑ | FPR@95TPR ↓ | AURC ↓ | OSCR ↑ |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Method | AUROC ↑ | Error AUPRC ↑ | FPR@95TPR ↓ | AURC ↓ | OSCR ↑ | OSCR_MD ↑ |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         values = [str(row["method"])] + [f"{float(row[key]):.6f}" for key in (
-            "auroc", "error_auprc", "fpr_at_95_tpr", "aurc", "oscr"
+            "auroc", "error_auprc", "fpr_at_95_tpr", "aurc", "oscr", "oscr_md"
         )]
         lines.append("| " + " | ".join(values) + " |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -253,7 +312,8 @@ def write_score_table(
 
 def write_curve_tables(
     output: Path, risk_curves: dict[str, tuple[np.ndarray, np.ndarray]],
-    oscr_curves: dict[str, tuple[np.ndarray, np.ndarray]]
+    oscr_curves: dict[str, tuple[np.ndarray, np.ndarray]],
+    oscr_md_curves: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]
 ) -> None:
     with (output / "risk_coverage.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -267,11 +327,21 @@ def write_curve_tables(
         for method in METHODS:
             fpr, ccr = oscr_curves[method]
             writer.writerows((method, float(x), float(y)) for x, y in zip(fpr, ccr))
+    with (output / "oscr_md_curve.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["method", "confidence_threshold", "ear", "mccr"])
+        for method in METHODS:
+            thresholds, ear, mccr = oscr_md_curves[method]
+            writer.writerows(
+                (method, float(threshold), float(x), float(y))
+                for threshold, x, y in zip(thresholds, ear, mccr)
+            )
 
 
 def plot_curves(
     output: Path, risk_curves: dict[str, tuple[np.ndarray, np.ndarray]],
-    oscr_curves: dict[str, tuple[np.ndarray, np.ndarray]]
+    oscr_curves: dict[str, tuple[np.ndarray, np.ndarray]],
+    oscr_md_curves: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]
 ) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 5.5))
     for method in METHODS:
@@ -292,6 +362,17 @@ def plot_curves(
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(output / "oscr_curve.png", dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    for method in METHODS:
+        _, ear, mccr = oscr_md_curves[method]
+        ax.plot(ear, mccr, label=method, linewidth=1.5)
+    ax.set(xlabel="EAR", ylabel="MCCR", xlim=(0, 1), ylim=(0, 1))
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(output / "oscr_md_curve.png", dpi=200)
     plt.close(fig)
 
 
@@ -364,15 +445,15 @@ def main() -> None:
     score_arrays = OrderedDict(
         (method, np.asarray(values, dtype=np.float64)) for method, values in score_lists.items()
     )
-    rows, risk_curves, oscr_curves = evaluate_scores(errors, score_arrays)
+    rows, risk_curves, oscr_curves, oscr_md_curves = evaluate_scores(errors, score_arrays)
 
     args.output_dir.mkdir(parents=True, exist_ok=False)
     write_metrics(args.output_dir / "metrics.csv", rows)
     write_markdown(args.output_dir / "metrics.md", rows)
     write_score_table(args.output_dir / "sample_scores.csv", sample_ids, labels_np,
                       predictions_np, score_arrays)
-    write_curve_tables(args.output_dir, risk_curves, oscr_curves)
-    plot_curves(args.output_dir, risk_curves, oscr_curves)
+    write_curve_tables(args.output_dir, risk_curves, oscr_curves, oscr_md_curves)
+    plot_curves(args.output_dir, risk_curves, oscr_curves, oscr_md_curves)
 
     try:
         revision = subprocess.run(
@@ -409,6 +490,14 @@ def main() -> None:
             "predictions; not standard open-set OSCR because no OOD set is used"
         ),
         "oscr_identity_check": "for this definition OSCR = accuracy * AUROC (up to rounding)",
+        "oscr_md": (
+            "area under MCCR versus EAR, evaluated at every unique acceptance-confidence "
+            "threshold; tied samples cross the threshold together; trapezoidal integration"
+        ),
+        "oscr_md_axes": {
+            "ear": "accepted wrong predictions / all wrong predictions",
+            "mccr": "accepted correct predictions / all test samples",
+        },
         "git_revision": revision,
         "best_selection_audit": best_selection,
         "software": {
