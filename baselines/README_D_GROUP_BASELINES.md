@@ -69,16 +69,16 @@ OSCR = D组准确率 × AUROC
 
 ## 4. 服务器运行方法
 
-在服务器仓库根目录 `/mnt/hdd8t/Mingle/xyyy` 运行：
+在服务器仓库根目录运行：
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy
+cd /path/to/your/clone
 
 python -m baselines.d_group_training_free_baselines \
   --config Classifier/outputs/D/seed_42/config.json \
   --checkpoint Classifier/outputs/D/seed_42/best.pt \
-  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
-  --output-dir /mnt/hdd8t/Mingle/xyyy/baselines/outputs/d_group/official_val \
+  --split-dir MisD/data/official_val \
+  --output-dir baselines/outputs/d_group/official_val \
   --device cuda
 ```
 
@@ -90,10 +90,10 @@ python -m baselines.d_group_training_free_baselines \
 python -m baselines.d_group_training_free_baselines \
   --config Classifier/outputs/D/seed_42/config.json \
   --checkpoint Classifier/outputs/D/seed_42/best.pt \
-  --pretrained /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
-  --class-map /mnt/hdd8t/Mingle/xyyy/MisD/data/class_to_idx.json \
-  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
-  --output-dir /mnt/hdd8t/Mingle/xyyy/baselines/outputs/d_group/official_val \
+  --pretrained models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
+  --class-map MisD/data/class_to_idx.json \
+  --split-dir MisD/data/official_val \
+  --output-dir baselines/outputs/d_group/official_val \
   --workers 8 \
   --device cuda
 ```
@@ -112,7 +112,7 @@ python -m baselines.d_group_training_free_baselines \
 ## 5. 固定输出结构
 
 ```text
-/mnt/hdd8t/Mingle/xyyy/baselines/outputs/d_group/official_val/
+baselines/outputs/d_group/official_val/
 ├── metrics.csv
 ├── metrics.md
 ├── sample_scores.csv

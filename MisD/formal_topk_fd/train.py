@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[1]
 TOPK_ROOT = ROOT.parent / "TopK-ProtoFD"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(TOPK_ROOT))
@@ -24,10 +25,10 @@ from topk_proto_fd.checkpoint import build_frozen_vit, load_mean_prototypes
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the formal competition-aware Top-K failure detector")
-    parser.add_argument("--vit-checkpoint", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth"))
-    parser.add_argument("--prototype-path", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/TopK-ProtoFD/prototypes/classifier_train_mean.pth"))
-    parser.add_argument("--data-root", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/data"))
-    parser.add_argument("--output-dir", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/output/formal_topk_fd/seed0"))
+    parser.add_argument("--vit-checkpoint", type=Path, default=REPO_ROOT / "MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth")
+    parser.add_argument("--prototype-path", type=Path, default=REPO_ROOT / "MisD/TopK-ProtoFD/prototypes/classifier_train_mean.pth")
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "MisD/data")
+    parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "MisD/output/formal_topk_fd/seed0")
     parser.add_argument("--model-name", default=None)
     parser.add_argument("--architecture", choices=("matching", "direct", "probability_only"), default="matching")
     parser.add_argument("--top-k", type=int, default=5)

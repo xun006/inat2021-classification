@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    root = Path("/mnt/hdd8t/Mingle/xyyy/MisD/output/formal_topk_fd")
+    root = Path(__file__).resolve().parents[1] / "output/formal_topk_fd"
     runs = [root / "seed0"] + sorted((root / "screen").glob("s*"))
     columns = ("run", "parameters", "best_epoch", "auroc", "aupr_error", "fpr95", "aurc")
     print(",".join(columns))

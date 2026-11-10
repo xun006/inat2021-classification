@@ -21,7 +21,7 @@ teacher Top-1 error. The primary selection metric is Error-AUPRC.
 
 ## Development run
 
-From `/mnt/hdd8t/Mingle/xyyy`:
+From the repository root:
 
 ```bash
 bash MisD/confidnet_tcp/run_train.sh

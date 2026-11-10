@@ -52,16 +52,16 @@ python -m unittest discover -s MisD/relu_core -p 'test_*.py' -v
 服务器路径与当前工程一致时：
 
 ```bash
-bash /mnt/hdd8t/Mingle/xyyy/MisD/relu_core/run_development.sh
+bash MisD/relu_core/run_development.sh
 ```
 
 如路径不同，可通过环境变量覆盖，但不要修改脚本中的协议：
 
 ```bash
-ROOT=/mnt/hdd8t/Mingle/xyyy \
-CLASSIFIER_RUN=/mnt/hdd8t/Mingle/xyyy/Classifier/outputs/C/seed_42 \
-OUT=/mnt/hdd8t/Mingle/xyyy/MisD/output/relu_core_classifier_c_seed42 \
-bash /mnt/hdd8t/Mingle/xyyy/MisD/relu_core/run_development.sh
+ROOT="$PWD" \
+CLASSIFIER_RUN="$PWD/Classifier/outputs/C/seed_42" \
+OUT="$PWD/MisD/output/relu_core_classifier_c_seed42" \
+bash MisD/relu_core/run_development.sh
 ```
 
 开发阶段输出：
@@ -93,7 +93,7 @@ OUT/
 网格、方向或选择规则后运行：
 
 ```bash
-bash /mnt/hdd8t/Mingle/xyyy/MisD/relu_core/run_final.sh
+bash MisD/relu_core/run_final.sh
 ```
 
 最终输出：

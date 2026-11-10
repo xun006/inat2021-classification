@@ -2,11 +2,13 @@ import os
 import random
 import shutil
 import sys
+from pathlib import Path
 
 # 配置参数（请根据需要修改）
-SOURCE_BASE = "/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants/val"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SOURCE_BASE = REPO_ROOT / "data/inat2021/plants/val"
 CATEGORY = "05961_Plantae_Tracheophyta_Liliopsida_Asparagales_Iridaceae_Crocus_tommasinianus"
-DEST_DIR = "/mnt/hdd8t/Mingle/xyyy/selected_images"          # 保存图片的目标文件夹
+DEST_DIR = REPO_ROOT / "selected_images"          # 保存图片的目标文件夹
 NUM_IMAGES = 5                          # 要抽取的图片数量
 
 # 支持的图片扩展名（可根据实际情况增减）

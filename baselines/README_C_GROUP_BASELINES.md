@@ -83,7 +83,7 @@ OSCR_MD = sum((EAR[j] - EAR[j-1]) * (MCCR[j] + MCCR[j-1]) / 2)
 python -m baselines.c_group_training_free_baselines \
   --config Classifier/outputs/C/seed_42/config.json \
   --checkpoint Classifier/outputs/C/seed_42/best.pt \
-  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
+  --split-dir MisD/data/official_val \
   --output-dir baselines/outputs/c_group/official_val \
   --device cuda
 ```
@@ -94,9 +94,9 @@ python -m baselines.c_group_training_free_baselines \
 python -m baselines.c_group_training_free_baselines \
   --config Classifier/outputs/C/seed_42/config.json \
   --checkpoint Classifier/outputs/C/seed_42/best.pt \
-  --pretrained /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
-  --class-map /mnt/hdd8t/Mingle/xyyy/MisD/data/class_to_idx.json \
-  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/official_val \
+  --pretrained models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth \
+  --class-map MisD/data/class_to_idx.json \
+  --split-dir MisD/data/official_val \
   --output-dir baselines/outputs/c_group/official_val \
   --workers 8 \
   --device cuda

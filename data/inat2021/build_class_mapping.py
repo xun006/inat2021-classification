@@ -3,7 +3,8 @@ import json
 from pathlib import Path
 from torchvision.datasets import ImageFolder
 
-data_root = Path("/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+data_root = REPO_ROOT / "data/inat2021/plants"
 
 train_set = ImageFolder(data_root / "train")
 val_set = ImageFolder(data_root / "val")

@@ -3,7 +3,7 @@
 # All artifacts use a dedicated namespace and cannot overwrite legacy runs.
 set -euo pipefail
 
-ROOT=${ROOT:-/mnt/hdd8t/Mingle/xyyy}
+ROOT=${ROOT:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"}
 CODE="$ROOT/MisD/confidnet_tcp"
 CLASSIFIER_RUN=${CLASSIFIER_RUN:-$ROOT/Classifier/outputs/C/seed_42}
 CLASSIFIER_CONFIG=${CLASSIFIER_CONFIG:-$CLASSIFIER_RUN/config.json}

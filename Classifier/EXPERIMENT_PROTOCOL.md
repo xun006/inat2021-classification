@@ -33,7 +33,7 @@ parameter groups 是实验处理的一部分，不允许针对某一 group 看�
 ## 输出
 
 ```text
-/mnt/hdd8t/Mingle/xyyy/Classifier/outputs/<GROUP>/seed_<SEED>/
+Classifier/outputs/<GROUP>/seed_<SEED>/
 ├── amp_events.jsonl
 ├── best.pt
 ├── class_to_idx.json
@@ -48,11 +48,11 @@ parameter groups 是实验处理的一部分，不允许针对某一 group 看�
 ## 服务器预检
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy/Classifier
+cd /path/to/your/clone
 python -m pip install -r Classifier/requirements.txt
 
-test -f /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth
-test -f /mnt/hdd8t/Mingle/xyyy/models/PlantCLEF_Model/mae_pretrain_vit_large.pth
+test -f models/PlantCLEF_Model/PlantCLEF2022_MAE_vit_large_patch16_epoch100.pth
+test -f models/PlantCLEF_Model/mae_pretrain_vit_large.pth
 
 python -m unittest \
   Classifier.test_protocol \
@@ -86,16 +86,16 @@ bash Classifier/scripts/train_seed.sh 44
 
 ```bash
 python -m Classifier.experiment export --group I --seed 44 \
-  --split-dir /mnt/hdd8t/Mingle/xyyy/MisD/data/classifier_val \
+  --split-dir MisD/data/classifier_val \
   --name val_export --expected-samples 42710
 
 python -m Classifier.audit_runs \
-  --output-root /mnt/hdd8t/Mingle/xyyy/Classifier/outputs \
-  --report /mnt/hdd8t/Mingle/xyyy/Classifier/outputs/audit_report.json
+  --output-root Classifier/outputs \
+  --report Classifier/outputs/audit_report.json
 
 python -m Classifier.summarize_matrix \
-  --output-root /mnt/hdd8t/Mingle/xyyy/Classifier/outputs \
-  --output /mnt/hdd8t/Mingle/xyyy/Classifier/outputs/summary_val
+  --output-root Classifier/outputs \
+  --output Classifier/outputs/summary_val
 ```
 
 汇总器要求同组三个 seed 的配置一致，并要求全部组的数据审计一致；否则拒绝生成结果。

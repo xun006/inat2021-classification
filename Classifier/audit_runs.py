@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .protocol import FORMAL_SEEDS, GROUPS, comparable_config, run_dir
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 REQUIRED = ("config.json", "data_audit.json", "class_to_idx.json", "model_report.json",
             "history.jsonl", "diagnostics.jsonl", "amp_events.jsonl", "last.pt", "best.pt")
@@ -46,7 +47,7 @@ def inspect_run(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("--output-root", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/Classifier/outputs"))
+    parser.add_argument("--output-root", type=Path, default=REPO_ROOT / "Classifier/outputs")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     reports = [inspect_run(run_dir(args.output_root, group, seed)) for group in GROUPS for seed in FORMAL_SEEDS]

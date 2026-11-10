@@ -15,7 +15,7 @@ DATA_ROOT/
 
 ## 1. 构建分类器训练集均值原型
 
-只使用 `/mnt/hdd8t/Mingle/xyyy/MisD/data/classifier/train`，不使用 classifier val：
+只使用 `MisD/data/classifier/train`，不使用 classifier val：
 
 ```bash
 python build_mean_prototypes.py \

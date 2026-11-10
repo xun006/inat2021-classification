@@ -16,6 +16,8 @@ from torchvision import datasets, transforms
 
 import models_vit
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 class ImageFolderWithPath(datasets.ImageFolder):
     """ImageFolder，同时返回图片绝对路径。"""
@@ -361,27 +363,27 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--checkpoint",
-        default="/mnt/hdd8t/Mingle/xyyy/output/inat2021_plants_linprobe/checkpoint-24.pth",
+        default=REPO_ROOT / "output/inat2021_plants_linprobe/checkpoint-24.pth",
     )
     parser.add_argument(
         "--val-root",
-        default="/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants/val",
+        default=REPO_ROOT / "data/inat2021/plants/val",
     )
     parser.add_argument(
         "--val-json",
-        default="/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants/val_plants.json",
+        default=REPO_ROOT / "data/inat2021/plants/val_plants.json",
     )
     parser.add_argument(
         "--mapping-path",
-        default="/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants/class_to_idx.json",
+        default=REPO_ROOT / "data/inat2021/plants/class_to_idx.json",
     )
     parser.add_argument(
         "--output-csv",
-        default="/mnt/hdd8t/Mingle/xyyy/output/data/teacher_val_predictions.csv",
+        default=REPO_ROOT / "output/data/teacher_val_predictions.csv",
     )
     parser.add_argument(
         "--output-features",
-        default="/mnt/hdd8t/Mingle/xyyy/output/data/teacher_val_features.npy",
+        default=REPO_ROOT / "output/data/teacher_val_features.npy",
     )
     parser.add_argument("--num-classes", type=int, default=4271)
     parser.add_argument("--topk", type=int, default=5)

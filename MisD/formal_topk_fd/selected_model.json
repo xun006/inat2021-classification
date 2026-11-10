@@ -2,7 +2,7 @@
   "selection_split": "detector_calibration",
   "selection_metric": "Error AUPRC",
   "selected_run": "s4_direct",
-  "selected_checkpoint": "/mnt/hdd8t/Mingle/xyyy/MisD/output/formal_topk_fd/screen/s4_direct/checkpoint_best.pth",
+  "selected_checkpoint": "MisD/output/formal_topk_fd/screen/s4_direct/checkpoint_best.pth",
   "selected_epoch": 3,
   "calibration_metrics": {
     "auroc": 0.9231619010345727,

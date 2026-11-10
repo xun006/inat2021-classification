@@ -14,11 +14,12 @@ from topk_proto_fd.engine import run_epoch
 from topk_proto_fd.model import FrozenViTWithFailureDetector, TopKPrototypeFailureDetector
 
 PROJECT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PROJECT_DIR.parents[1]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a Top-K prototype failure detector")
-    parser.add_argument("--vit-checkpoint", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth"))
+    parser.add_argument("--vit-checkpoint", type=Path, default=REPO_ROOT / "MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=PROJECT_DIR / "outputs/mean_proto_bottleneck_k5")
     parser.add_argument("--prototype-path", type=Path, default=PROJECT_DIR / "prototypes/classifier_train_mean.pth")

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /mnt/hdd8t/Mingle/xyyy
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 COMMON_ARGS=(
   --vit-checkpoint MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth

@@ -73,7 +73,12 @@ def loader(dataset, cfg, shuffle=False, epoch=0):
 
 
 def resolve_config(path: Path, group: str, seed: int | None = None) -> dict:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    config_path = Path(path).resolve()
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    for key in ("train_dir", "val_dir", "class_map", "plantclef_pretrained", "imagenet_pretrained", "pretrained"):
+        value = raw.get(key)
+        if value and not Path(value).is_absolute():
+            raw[key] = str((config_path.parent / value).resolve())
     selected_seed = raw.get("seed", 42) if seed is None else seed
     if "protocols" in raw:
         cfg = apply_group(raw, group, selected_seed)

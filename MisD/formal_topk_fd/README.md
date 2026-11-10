@@ -10,14 +10,14 @@ teacher Top-1 prediction is wrong.
 ## CPU architecture tests
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy
+cd /path/to/your/clone
 python MisD/formal_topk_fd/test_formal_method.py
 ```
 
 ## Seed-0 training (GPU)
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy
+cd /path/to/your/clone
 bash MisD/formal_topk_fd/run_seed0.sh
 ```
 
@@ -32,7 +32,7 @@ network, and a direct correctness head. Each run changes only the factors
 documented in `run_improvement_screen.sh` and never reads `official_val`.
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy
+cd /path/to/your/clone
 bash MisD/formal_topk_fd/run_improvement_screen.sh
 python MisD/formal_topk_fd/summarize_screen.py
 ```
@@ -56,6 +56,6 @@ selection record was frozen in `selected_model.json` before official testing.
 Run the locked test and produce the common-baseline comparison with:
 
 ```bash
-cd /mnt/hdd8t/Mingle/xyyy
+cd /path/to/your/clone
 bash MisD/formal_topk_fd/run_official_selected.sh
 ```

@@ -8,8 +8,9 @@ from .engine import export_run, resolve_config, train
 from .protocol import FORMAL_SEEDS, GROUPS, run_dir, validate_group_seed
 
 
-DEFAULT_CONFIG = Path("Classifier/config.json")
-DEFAULT_OUTPUT_ROOT = Path("/mnt/hdd8t/Mingle/xyyy/Classifier/outputs")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = REPO_ROOT / "Classifier/config.json"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "Classifier/outputs"
 
 
 def parse_args():

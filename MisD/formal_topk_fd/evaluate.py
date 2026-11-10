@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parents[1]
 TOPK_ROOT = ROOT.parent / "TopK-ProtoFD"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(TOPK_ROOT))
@@ -23,7 +24,7 @@ from topk_proto_fd.checkpoint import build_frozen_vit
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a locked formal Top-K failure detector")
     parser.add_argument("--detector-checkpoint", type=Path, required=True)
-    parser.add_argument("--data-root", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/data"))
+    parser.add_argument("--data-root", type=Path, default=REPO_ROOT / "MisD/data")
     parser.add_argument("--split", choices=("detector_calibration", "official_val"), default="detector_calibration")
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--batch-size", type=int, default=128)

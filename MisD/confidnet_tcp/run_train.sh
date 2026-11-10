@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run from /mnt/hdd8t/Mingle/xyyy. This script never opens official_val.
+# This script never opens official_val.
 set -euo pipefail
 
-ROOT=/mnt/hdd8t/Mingle/xyyy
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 CODE="$ROOT/MisD/confidnet_tcp"
 OUT="$ROOT/MisD/output/confidnet_tcp"
 

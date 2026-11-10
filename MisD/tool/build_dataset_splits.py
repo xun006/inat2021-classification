@@ -28,6 +28,7 @@ ALLOCATIONS = {
     "detector_train": 30,
     "detector_calibration": 5,
 }
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,12 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path("/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants"),
+        default=REPO_ROOT / "data/inat2021/plants",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/data"),
+        default=REPO_ROOT / "MisD/data",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(

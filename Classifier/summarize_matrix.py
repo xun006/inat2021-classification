@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .protocol import FORMAL_SEEDS, GROUPS, comparable_config, run_dir
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 METRICS = ("top1", "top5", "macro_f1", "auroc_error", "aupr_error",
            "fpr_at_95_tpr", "aurc")
@@ -17,7 +18,7 @@ METRICS = ("top1", "top5", "macro_f1", "auroc_error", "aupr_error",
 def main() -> None:
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--output-root", type=Path,
-                        default=Path("/mnt/hdd8t/Mingle/xyyy/Classifier/outputs"))
+                        default=REPO_ROOT / "Classifier/outputs")
     parser.add_argument("--export-name", default="val_export")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

@@ -14,12 +14,13 @@ from topk_proto_fd.data import build_transform
 from topk_proto_fd.model import extract_classifier_features
 
 PROJECT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PROJECT_DIR.parents[1]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build class-mean ViT feature prototypes")
-    parser.add_argument("--data-dir", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/data/classifier/train"))
-    parser.add_argument("--vit-checkpoint", type=Path, default=Path("/mnt/hdd8t/Mingle/xyyy/MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth"))
+    parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / "MisD/data/classifier/train")
+    parser.add_argument("--vit-checkpoint", type=Path, default=REPO_ROOT / "MisD/output/vit_large_linear_probe_4271/checkpoint_best.pth")
     parser.add_argument("--output", type=Path, default=PROJECT_DIR / "prototypes/classifier_train_mean.pth")
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=8)

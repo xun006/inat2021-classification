@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /mnt/hdd8t/Mingle/xyyy
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 CHECKPOINT="MisD/output/formal_topk_fd/screen/s4_direct/checkpoint_best.pth"
 OUTPUT_DIR="MisD/output/formal_topk_fd/final/s4_direct_seed0_official_val"

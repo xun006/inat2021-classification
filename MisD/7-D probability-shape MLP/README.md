@@ -7,7 +7,7 @@ It uses the seven probability-shape features specified in
 Run from any directory:
 
 ```bash
-python /mnt/hdd8t/Mingle/xyyy/MisD/train_probability_shape_mlp.py
+python MisD/train_probability_shape_mlp.py
 ```
 
 By default, outputs are written to `MisD/output/probability_shape_mlp`.

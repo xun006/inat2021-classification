@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-ROOT = Path("/mnt/hdd8t/Mingle/xyyy/MisD")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_csv_rows(path: Path, name_key: str = "method") -> list[dict]:

@@ -1,6 +1,6 @@
 {
-  "source": "/mnt/hdd8t/Mingle/xyyy/data/inat2021/plants",
-  "output": "/mnt/hdd8t/Mingle/xyyy/MisD/data",
+  "source": "data/inat2021/plants",
+  "output": "MisD/data",
   "seed": 42,
   "randomization": "independent deterministic shuffle per class using SHA-256-derived seed",
   "link_mode": "hardlink",
